@@ -1,0 +1,127 @@
+Add that user to the docker group:
+sudo usermod -aG docker jenkins
+Restart Jenkins (important!):
+sudo systemctl restart Jenkins
+sudo -u jenkins docker images
+
+================================
+Jenkins Setup Guide for Docker Hub Integration
+Prerequisites Setup
+1. Docker Hub Credentials Setup in Jenkins
+
+Navigate to Jenkins Dashboard
+
+Go to: Manage Jenkins → Manage Credentials
+
+
+Add Docker Hub Credentials
+
+Click (global) → Add Credentials
+Kind: Username with password
+Username: farajassulai
+Password: [Your Docker Hub Password/Token]
+ID: dockerhub-credentials
+Description: Docker Hub credentials for farajassulai
+
+
+
+2. GitHub Integration Setup
+
+GitHub Webhook Configuration
+
+Go to your GitHub repository: https://github.com/mcsredhat/Jenkins
+Navigate to Settings → Webhooks → Add webhook
+Payload URL: http://your-jenkins-server:8080/github-webhook/
+Content type: application/json
+Events: Select Just the push event
+
+
+GitHub Credentials (Optional for private repos)
+
+In Jenkins: Manage Jenkins → Manage Credentials
+Kind: Username with password or SSH Username with private key
+ID: github-credentials
+
+
+
+3. Jenkins Pipeline Job Configuration
+
+Create New Pipeline Job
+
+Dashboard → New Item → Pipeline
+Name: flask-app-pipeline
+
+
+Configure Pipeline
+
+Definition: Pipeline script from SCM
+SCM: Git
+Repository URL: https://github.com/mcsredhat/Jenkins
+Branch: */main (or your default branch)
+Script Path: Jenkinsfile
+
+
+Build Triggers
+
+✅ GitHub hook trigger for GITScm polling
+✅ Poll SCM (optional backup): H/5 * * * *
+
+
+Your images will be pushed to:
+
+Repository: https://hub.docker.com/r/farajassulai/flask-app
+Tags:
+
+latest - Latest successful build
+{BUILD_NUMBER}-{GIT_COMMIT} - Specific build version
+production - Production-ready image (main branch)
+staging - Staging image (develop branch)
+v1.0.0 - Version tags
+
+
+Jenkins Plugins Required
+Make sure these plugins are installed:
+
+Docker Pipeline Plugin
+Manage Jenkins → Manage Plugins → Available
+Search for Docker Pipeline and install
+
+
+GitHub Plugin
+
+For GitHub integration and webhooks
+
+
+Email Extension Plugin
+
+For build notifications
+
+
+Pipeline: Stage View Plugin
+
+For better pipeline visualization
+
+Testing the Setup
+1. Manual Build Test
+bash# In Jenkins job, click "Build Now"
+# Check console output for:
+# - Successful GitHub checkout
+# - Docker image build
+# - Docker Hub push
+2. Webhook Test
+bash# Make a commit to your GitHub repository
+git add .
+git commit -m "Test Jenkins webhook"
+git push origin main
+
+
+ sudo usermod -aG docker jenkins
+ sudo systemctl restart jenkins
+ sudo -u jenkins docker images
+ sudo -u jenkins docker pull farajassulai/flask-app:latest
+ sudo -u jenkins docker ps -a 
+sudo -u jenkins docker stop flask-app-staging flask-app-production
+sudo -u jenkins docker rm -f flask-app-staging flask-app-production
+sudo -u jenkins docker rmi -f  fe28d777a*
+ sudo -u jenkins docker system prune -a -f
+ sudo -u jenkins docker images -a

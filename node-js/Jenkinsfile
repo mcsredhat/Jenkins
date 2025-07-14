@@ -1,0 +1,231 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_USERNAME = 'farajassulai'
+        DOCKER_REPO = 'node-app'
+        IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
+        BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
+        CONTAINER_NAME = "node-app-${env.BUILD_NUMBER}"
+        TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
+        GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo "📦 Checking out code from GitHub repository..."
+                checkout scm
+
+                script {
+                    echo "Current branch: ${env.BRANCH_NAME}"
+                    echo "Git commit: ${env.GIT_COMMIT}"
+                    echo "Repository URL: ${GITHUB_REPO}"
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "🔧 Building Docker image..."
+                script {
+                    def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}")
+                    image.tag("jenkins-latest")
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo "🧪 Running containerized tests..."
+                script {
+                    try {
+                        sh """
+                            docker run -d --name ${TEST_CONTAINER_NAME} \
+                            -p 3000:3000 \
+                            -e ENVIRONMENT=test \
+                            ${IMAGE_NAME}:${BUILD_TAG}
+                        """
+
+                        echo "⌛ Waiting for application to start..."
+                        retry(5) {
+                            sleep 10
+                            sh "curl -f http://localhost:3000/health || curl -f http://localhost:3000/"
+                        }
+
+                        echo "✅ Health check passed!"
+                    } catch (e) {
+                        echo "❌ Test failed: ${e.getMessage()}"
+                        throw e
+                    } finally {
+                        sh """
+                            docker stop ${TEST_CONTAINER_NAME} || true
+                            docker rm ${TEST_CONTAINER_NAME} || true
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                echo "🔍 Running security scan with Trivy..."
+                script {
+                    sh """
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image \
+                        --exit-code 0 --severity HIGH,CRITICAL \
+                        ${IMAGE_NAME}:${BUILD_TAG} || echo "⚠️ Security scan completed with warnings"
+                    """
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                echo "📤 Pushing image to Docker Hub..."
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
+                        def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
+
+                        image.push()
+                        image.push("jenkins-latest")
+
+                        if (env.BRANCH_NAME == 'main') {
+                            image.push("production")
+                            image.push("v1.0.0")
+                        } else if (env.BRANCH_NAME == 'develop') {
+                            image.push("staging")
+                            image.push("develop-latest")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                echo "🚀 Deploying to staging..."
+                script {
+                    deployToEnvironment('staging', '8080')
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Deploy to production?', ok: 'Deploy'
+                echo "🚀 Deploying to production..."
+                script {
+                    deployToEnvironment('production', '80')
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Cleaning up..."
+            script {
+                sh """
+                    docker stop ${TEST_CONTAINER_NAME} || true
+                    docker rm ${TEST_CONTAINER_NAME} || true
+                    docker image prune -f --filter "until=24h"
+                """
+            }
+        }
+
+        success {
+            echo "✅ Pipeline completed successfully!"
+            script {
+                emailext(
+                    subject: "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                        ✔️ Build succeeded!
+
+                        Job: ${env.JOB_NAME}
+                        Build Number: ${env.BUILD_NUMBER}
+                        Branch: ${env.BRANCH_NAME}
+                        Image: ${IMAGE_NAME}:${BUILD_TAG}
+
+                        GitHub: ${GITHUB_REPO}
+                        Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
+                        Build URL: ${env.BUILD_URL}
+                    """,
+                    recipientProviders: [developers()]
+                )
+            }
+        }
+
+        failure {
+            echo "❌ Pipeline failed!"
+            script {
+                emailext(
+                    subject: "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                        ❌ Build failed!
+
+                        Job: ${env.JOB_NAME}
+                        Branch: ${env.BRANCH_NAME}
+                        Build URL: ${env.BUILD_URL}
+
+                        Please check the console output for details:
+                        ${env.BUILD_URL}console
+                    """,
+                    recipientProviders: [developers(), requestor()]
+                )
+            }
+        }
+
+        unstable {
+            echo "⚠️ Pipeline completed with warnings."
+        }
+    }
+}
+
+// Helper for deployment
+def deployToEnvironment(environment, port) {
+    def containerName = "node-app-${environment}"
+    try {
+        sh """
+            docker stop ${containerName} || true
+            docker rm ${containerName} || true
+            docker run -d \
+                --name ${containerName} \
+                -p ${port}:3000 \
+                -e ENVIRONMENT=${environment} \
+                --restart=unless-stopped \
+                --memory=512m \
+                --cpus=0.5 \
+                ${IMAGE_NAME}:${BUILD_TAG}
+        """
+
+        echo "⌛ Waiting for deployment to stabilize..."
+        sleep 15
+
+        retry(3) {
+            sh """
+                curl -f http://localhost:${port}/health || curl -f http://localhost:${port}/
+            """
+        }
+
+        echo "✅ Successfully deployed to ${environment}"
+    } catch (e) {
+        echo "❌ Deployment to ${environment} failed: ${e.getMessage()}"
+        throw e
+    }
+}
+        
