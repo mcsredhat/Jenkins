@@ -83,7 +83,6 @@ pipeline {
         }
 
         stage('Push to Docker Hub') {
-            // 👇 Push only on main or develop branches
             when {
                 anyOf {
                     branch 'main'
@@ -94,16 +93,13 @@ pipeline {
                 echo "Pushing image to Docker Hub..."
                 echo "Docker Hub Repository: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}"
                 script {
-                    // Optional: Debug login confirmation
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                         sh 'echo $PASS | docker login -u $USER --password-stdin'
                     }
-
-                    // Push using Docker plugin and registry
                     docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
                         def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
-                        image.push()                  // push BUILD_TAG
-                        image.push("latest")         // push latest tag
+                        image.push()
+                        image.push("latest")
 
                         if (env.BRANCH_NAME == 'main') {
                             image.push("production")
@@ -113,7 +109,6 @@ pipeline {
                             image.push("develop-latest")
                         }
                     }
-
                     echo "✅ Images pushed successfully!"
                 }
             }
@@ -207,7 +202,6 @@ pipeline {
     }
 }
 
-// Deployment helper function
 def deployToEnvironment(environment, port) {
     def containerName = "flask-app-${environment}"
 
