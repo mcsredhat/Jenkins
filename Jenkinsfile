@@ -118,7 +118,7 @@ pipeline {
             steps {
                 echo "Deploying to staging environment..."
                 script {
-                    deployToEnvironment('staging', '8080')
+                    deployToEnvironment('staging', '8088')
                 }
             }
         }
