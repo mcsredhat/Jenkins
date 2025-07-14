@@ -84,10 +84,7 @@ pipeline {
 
         stage('Push to Docker Hub') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
+                expression { return true } // TEMP: run this stage always for testing
             }
             steps {
                 echo "Pushing image to Docker Hub..."
@@ -116,7 +113,7 @@ pipeline {
 
         stage('Deploy to Staging') {
             when {
-                branch 'develop'
+                expression { return true } // TEMP: run this stage always for testing
             }
             steps {
                 echo "Deploying to staging environment..."
@@ -128,7 +125,7 @@ pipeline {
 
         stage('Deploy to Production') {
             when {
-                branch 'main'
+                expression { return true } // TEMP: run this stage always for testing
             }
             steps {
                 echo "Deploying to production environment..."
