@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     environment {
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USERNAME = 'farajassulai'
@@ -11,7 +11,7 @@ pipeline {
         TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
@@ -28,7 +28,7 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build') {
             steps {
                 echo "Building Docker image..."
                 script {
@@ -38,36 +38,111 @@ pipeline {
             }
         }
 
-        stage('Push to Docker Hub (Debug Mode)') {
+        stage('Test') {
             steps {
+                echo "Running tests..."
                 script {
-                    echo "Logging into Docker Hub for debug..."
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                        sh 'echo $PASS | docker login -u $USER --password-stdin'
-                    }
-
-                    echo "Listing Docker images before push..."
-                    sh "docker images"
-
-                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
-                        echo "Pushing image: ${IMAGE_NAME}:${BUILD_TAG}"
-                        docker.image("${IMAGE_NAME}:${BUILD_TAG}").push()
-                        echo "Pushing tag: latest"
-                        docker.image("${IMAGE_NAME}:${BUILD_TAG}").push("latest")
-
-                        if (env.BRANCH_NAME == 'main') {
-                            docker.image("${IMAGE_NAME}:${BUILD_TAG}").push("production")
-                            docker.image("${IMAGE_NAME}:${BUILD_TAG}").push("v1.0.0")
-                        } else if (env.BRANCH_NAME == 'develop') {
-                            docker.image("${IMAGE_NAME}:${BUILD_TAG}").push("staging")
-                            docker.image("${IMAGE_NAME}:${BUILD_TAG}").push("develop-latest")
+                    try {
+                        sh """
+                            docker run -d --name ${TEST_CONTAINER_NAME} \
+                            -p 5000:5000 \
+                            -e ENVIRONMENT=test \
+                            ${IMAGE_NAME}:${BUILD_TAG}
+                        """
+                        echo "Waiting for application to start..."
+                        retry(5) {
+                            sleep 10
+                            sh "curl -f http://localhost:5000/health || curl -f http://localhost:5000/"
                         }
+                        echo "Health check passed!"
+                    } catch (Exception e) {
+                        echo "Test failed: ${e.getMessage()}"
+                        throw e
+                    } finally {
+                        sh """
+                            docker stop ${TEST_CONTAINER_NAME} || true
+                            docker rm ${TEST_CONTAINER_NAME} || true
+                        """
                     }
                 }
             }
         }
 
-        // Optional: Add your Test, Scan, and Deploy stages back here
+        stage('Security Scan') {
+            steps {
+                echo "Running security scan..."
+                script {
+                    sh """
+                        echo "Running basic security checks with Trivy..."
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL \
+                        ${IMAGE_NAME}:${BUILD_TAG} || echo "Security scan completed with warnings"
+                    """
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            // 👇 Push only on main or develop branches
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                echo "Pushing image to Docker Hub..."
+                echo "Docker Hub Repository: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}"
+                script {
+                    // Optional: Debug login confirmation
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                        sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    }
+
+                    // Push using Docker plugin and registry
+                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
+                        def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
+                        image.push()                  // push BUILD_TAG
+                        image.push("latest")         // push latest tag
+
+                        if (env.BRANCH_NAME == 'main') {
+                            image.push("production")
+                            image.push("v1.0.0")
+                        } else if (env.BRANCH_NAME == 'develop') {
+                            image.push("staging")
+                            image.push("develop-latest")
+                        }
+                    }
+
+                    echo "✅ Images pushed successfully!"
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                echo "Deploying to staging environment..."
+                script {
+                    deployToEnvironment('staging', '8080')
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo "Deploying to production environment..."
+                script {
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                    deployToEnvironment('production', '80')
+                }
+            }
+        }
     }
 
     post {
@@ -82,10 +157,81 @@ pipeline {
 
         success {
             echo "Pipeline completed successfully!"
+            script {
+                emailext (
+                    subject: "✅ Build Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                    body: """
+                        Build completed successfully!
+
+                        Job: ${env.JOB_NAME}
+                        Build Number: ${env.BUILD_NUMBER}
+                        Branch: ${env.BRANCH_NAME}
+                        Image: ${IMAGE_NAME}:${BUILD_TAG}
+
+                        GitHub Repository: ${GITHUB_REPO}
+                        Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
+
+                        Build URL: ${env.BUILD_URL}
+                    """,
+                    recipientProviders: [developers()]
+                )
+            }
         }
 
         failure {
             echo "Pipeline failed!"
+            script {
+                emailext (
+                    subject: "❌ Build Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                    body: """
+                        Build failed!
+
+                        Job: ${env.JOB_NAME}
+                        Build Number: ${env.BUILD_NUMBER}
+                        Branch: ${env.BRANCH_NAME}
+
+                        GitHub Repository: ${GITHUB_REPO}
+                        Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
+
+                        Build URL: ${env.BUILD_URL}
+                        Console Output: ${env.BUILD_URL}console
+                    """,
+                    recipientProviders: [developers(), requestor()]
+                )
+            }
         }
+
+        unstable {
+            echo "Pipeline completed with warnings!"
+        }
+    }
+}
+
+// Deployment helper function
+def deployToEnvironment(environment, port) {
+    def containerName = "flask-app-${environment}"
+
+    try {
+        sh "docker stop ${containerName} || true"
+        sh "docker rm ${containerName} || true"
+        sh """
+            docker run -d \
+            --name ${containerName} \
+            -p ${port}:5000 \
+            -e ENVIRONMENT=${environment} \
+            --restart=unless-stopped \
+            --memory=512m \
+            --cpus=0.5 \
+            ${IMAGE_NAME}:${BUILD_TAG}
+        """
+        echo "Waiting for ${environment} deployment to stabilize..."
+        sleep 15
+        retry(3) {
+            sh "curl -f http://localhost:${port}/health || curl -f http://localhost:${port}/"
+        }
+        echo "✅ Successfully deployed to ${environment} environment"
+    } catch (Exception e) {
+        echo "❌ Deployment to ${environment} failed: ${e.getMessage()}"
+        throw e
     }
 }
