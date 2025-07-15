@@ -44,7 +44,7 @@ RUN npm install --omit=dev && \
     npm cache clean --force
 
 # Copy application code (excluding files in .dockerignore)
-COPY server.js ./
+COPY ./app/server.js ./
 
 # Create directories and set permissions
 RUN mkdir -p /app/data /app/logs && \
