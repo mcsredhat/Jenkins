@@ -10,6 +10,8 @@ pipeline {
         CONTAINER_NAME = "node-app-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
+        PROJECT_PATH = 'node-js'
+        DOCKERFILE_PATH = 'node-js/Dockerfile'
         TEST_PORT = "${8000 + env.BUILD_NUMBER.toInteger() % 1000}"
     }
 
@@ -23,6 +25,15 @@ pipeline {
                     echo "Current branch: ${env.BRANCH_NAME ?: 'main'}"
                     echo "Git commit: ${env.GIT_COMMIT ?: 'unknown'}"
                     echo "Repository URL: ${GITHUB_REPO}"
+                    echo "Project path: ${PROJECT_PATH}"
+                    
+                    // Change to project directory
+                    dir("${PROJECT_PATH}") {
+                        echo "Working in directory: ${pwd()}"
+                        sh "ls -la"
+                        echo "Contents of app directory:"
+                        sh "ls -la app/ || echo 'app directory not found'"
+                    }
                 }
             }
         }
@@ -31,13 +42,15 @@ pipeline {
             steps {
                 echo "🔧 Building Docker image..."
                 script {
-                    try {
-                        def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}")
-                        image.tag("jenkins-latest")
-                        echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
-                    } catch (Exception e) {
-                        echo "❌ Build failed: ${e.getMessage()}"
-                        throw e
+                    dir("${PROJECT_PATH}") {
+                        try {
+                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}")
+                            image.tag("jenkins-latest")
+                            echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
+                        } catch (Exception e) {
+                            echo "❌ Build failed: ${e.getMessage()}"
+                            throw e
+                        }
                     }
                 }
             }
