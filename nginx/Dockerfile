@@ -64,8 +64,14 @@ RUN apk update && \
       chmod 644 ${VAR_log}/*.log && \
       rm -rf /var/cache/apk/*
 
+# Create a simple index.html file
+RUN echo '<html><head><title>Nginx Web Server</title></head><body><h1>Welcome to Nginx!</h1><p>This is a containerized nginx web server.</p><p>Health check: <a href="/health">/health</a></p></body></html>' > /usr/share/nginx/html/index.html
+
 # Copy the project files 
 COPY conf/server.conf /etc/nginx/conf.d/server.conf
+
+# Remove default nginx config to avoid conflicts
+RUN rm /etc/nginx/conf.d/default.conf
 
 # Add the mount point volumes
 VOLUME ["${MOUNT1}", "${MOUNT2}"]
