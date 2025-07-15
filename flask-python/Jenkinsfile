@@ -65,7 +65,7 @@ pipeline {
                         // Change to the application directory for building
                         dir(APP_DIR) {
                             def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
-                            image.tag("jenk-flask-pyton")
+                            image.tag("jenk-flask-python")
                             echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         }
                     } catch (Exception e) {
@@ -356,9 +356,9 @@ pipeline {
     }
 }
 
-// Helper function for deployment
+// Helper function for deployment - FIXED
 def deployToEnvironment(environment, port) {
-    def containerName = "node-app-${environment}"
+    def containerName = "flask-app-${environment}"  // Changed from node-app to flask-app
     try {
         echo "🚀 Deploying ${IMAGE_NAME}:${BUILD_TAG} to ${environment} on port ${port}"
         
