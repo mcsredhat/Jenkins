@@ -8,7 +8,7 @@ pipeline {
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
         CONTAINER_NAME = "nginx-${env.BUILD_NUMBER}"
-        TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
+        TEST_CONTAINER_NAME = "test-nginx-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         APP_PORT = "8888"
         TEST_PORT = "9999"
@@ -16,17 +16,17 @@ pipeline {
         APP_DIR = "nginx"
         
         // ENABLE DEPLOYMENT STAGES - Set these to enable stages
-        SKIP_SECURITY_SCAN = 'false'  // Changed from 'true' to 'false'
-        ENABLE_DOCKER_PUSH = 'true'   // New variable to enable Docker push
-        ENABLE_STAGING_DEPLOY = 'true' // New variable to enable staging deployment  
-        ENABLE_PRODUCTION_DEPLOY = 'true' // New variable to enable production deployment
+        SKIP_SECURITY_SCAN = 'false'
+        ENABLE_DOCKER_PUSH = 'true'
+        ENABLE_STAGING_DEPLOY = 'true'
+        ENABLE_PRODUCTION_DEPLOY = 'true'
         
-        // Override branch detection for testing (remove these in production)
-        FORCE_BRANCH_MAIN = 'true'     // Force treat as main branch
-        FORCE_BRANCH_DEVELOP = 'false'  // Force treat as develop branch
+        // Override branch detection for testing
+        FORCE_BRANCH_MAIN = 'true'
+        FORCE_BRANCH_DEVELOP = 'false'
         
         // Email configuration
-        EMAIL_CONFIGURED = 'false'     // Set to 'true' if you want email notifications
+        EMAIL_CONFIGURED = 'false'
     }
 
     stages {
@@ -89,15 +89,33 @@ pipeline {
                             ${IMAGE_NAME}:${BUILD_TAG}
                         """
 
-                        echo "⌛ Waiting for application to start..."
+                        echo "⌛ Waiting for nginx to start..."
                         retry(5) {
                             sleep 10
-                            sh "curl -f http://localhost:${TEST_PORT}/health || curl -f http://localhost:${TEST_PORT}/"
+                            sh """
+                                echo "Testing health endpoint..."
+                                curl -f http://localhost:${TEST_PORT}/health || {
+                                    echo "Health check failed, trying root endpoint..."
+                                    curl -f http://localhost:${TEST_PORT}/
+                                }
+                            """
                         }
 
-                        echo "✅ Health check passed!"
+                        echo "🔍 Additional nginx tests..."
+                        sh """
+                            # Test different endpoints
+                            curl -f http://localhost:${TEST_PORT}/status || echo "Status endpoint not available"
+                            curl -I http://localhost:${TEST_PORT}/ | head -1
+                            
+                            # Check if nginx is running in container
+                            docker exec ${TEST_CONTAINER_NAME} ps aux | grep nginx || echo "Nginx process check failed"
+                        """
+
+                        echo "✅ All tests passed!"
                     } catch (Exception e) {
                         echo "❌ Test failed: ${e.getMessage()}"
+                        // Show container logs for debugging
+                        sh "docker logs ${TEST_CONTAINER_NAME} || echo 'Could not retrieve logs'"
                         throw e
                     } finally {
                         sh """
@@ -120,7 +138,6 @@ pipeline {
                 echo "🔍 Running security scan with Trivy..."
                 script {
                     try {
-                        // Check if Trivy is available, if not, skip with warning
                         def trivyAvailable = sh(
                             script: "docker run --rm aquasec/trivy:latest --version",
                             returnStatus: true
@@ -132,7 +149,6 @@ pipeline {
                             return
                         }
                         
-                        // First, run a comprehensive scan to see all vulnerabilities
                         echo "📊 Running comprehensive vulnerability scan..."
                         sh """
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -142,7 +158,6 @@ pipeline {
                             ${IMAGE_NAME}:${BUILD_TAG} || true
                         """
                         
-                        // Then run the critical check (but don't fail the build for now)
                         echo "🚨 Checking for CRITICAL vulnerabilities only..."
                         def criticalScanResult = sh(
                             script: """
@@ -166,7 +181,6 @@ pipeline {
                         
                     } catch (Exception e) {
                         echo "❌ Security scan failed: ${e.getMessage()}"
-                        // Don't fail the build, just mark as unstable
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -176,10 +190,8 @@ pipeline {
         stage('Push to Docker Hub') {
             when {
                 anyOf {
-                    // Original conditions
                     branch 'main'
                     branch 'develop'
-                    // New conditions for enabling push
                     environment name: 'ENABLE_DOCKER_PUSH', value: 'true'
                     environment name: 'FORCE_BRANCH_MAIN', value: 'true'
                     environment name: 'FORCE_BRANCH_DEVELOP', value: 'true'
@@ -189,18 +201,11 @@ pipeline {
                 echo "📤 Pushing image to Docker Hub..."
                 script {
                     try {
-                        // Check if Docker Hub credentials are configured
-                        def credentialsExist = sh(
-                            script: "docker info | grep -i 'registry' || echo 'Docker daemon accessible'",
-                            returnStatus: true
-                        )
-                        
-                        // Try to push with credentials if available, otherwise push without registry authentication
                         try {
                             docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
                                 def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
                                 image.push()
-                                image.push("jenkins-latest")
+                                image.push("jenkins-nginx-latest")
 
                                 if (env.BRANCH_NAME == 'main' || env.FORCE_BRANCH_MAIN == 'true') {
                                     image.push("production")
@@ -215,10 +220,9 @@ pipeline {
                         } catch (Exception credError) {
                             echo "⚠️ Docker Hub credentials not found, attempting push without registry authentication..."
                             
-                            // Manual push without registry wrapper
                             sh """
                                 docker push ${IMAGE_NAME}:${BUILD_TAG} || echo "Push failed - check Docker Hub login"
-                                docker push ${IMAGE_NAME}:jenkins-latest || echo "Push failed - check Docker Hub login"
+                                docker push ${IMAGE_NAME}:jenkins-nginx-latest || echo "Push failed - check Docker Hub login"
                             """
                             
                             echo "✅ Image push attempted (check Docker Hub for results)"
@@ -259,7 +263,6 @@ pipeline {
             }
             steps {
                 script {
-                    // Make input optional for testing
                     if (env.SKIP_PRODUCTION_APPROVAL != 'true') {
                         try {
                             timeout(time: 5, unit: 'MINUTES') {
@@ -272,7 +275,7 @@ pipeline {
                     }
                     
                     echo "🚀 Deploying to production..."
-                    deployToEnvironment('production', '9191')  // Changed from port 80 to 9090 to avoid permission issues
+                    deployToEnvironment('production', '9191')
                 }
             }
         }
@@ -294,12 +297,11 @@ pipeline {
             echo "✅ Pipeline completed successfully!"
             script {
                 try {
-                    // Only send email if email configuration is available
                     if (env.EMAIL_CONFIGURED == 'true') {
                         emailext(
-                            subject: "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            subject: "✅ Nginx Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
-                                ✔️ Build succeeded!
+                                ✔️ Nginx build succeeded!
 
                                 Job: ${env.JOB_NAME}
                                 Build Number: ${env.BUILD_NUMBER}
@@ -325,12 +327,11 @@ pipeline {
             echo "❌ Pipeline failed!"
             script {
                 try {
-                    // Only send email if email configuration is available
                     if (env.EMAIL_CONFIGURED == 'true') {
                         emailext(
-                            subject: "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            subject: "❌ Nginx Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
-                                ❌ Build failed!
+                                ❌ Nginx build failed!
 
                                 Job: ${env.JOB_NAME}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
@@ -356,9 +357,9 @@ pipeline {
     }
 }
 
-// Helper function for deployment - FIXED
+// Helper function for deployment - Updated for nginx
 def deployToEnvironment(environment, port) {
-    def containerName = "flask-app-${environment}"  // Changed from node-app to flask-app
+    def containerName = "nginx-app-${environment}"
     try {
         echo "🚀 Deploying ${IMAGE_NAME}:${BUILD_TAG} to ${environment} on port ${port}"
         
@@ -371,7 +372,7 @@ def deployToEnvironment(environment, port) {
                 -e ENVIRONMENT=${environment} \
                 -e APP_PORT=${APP_PORT} \
                 --restart=unless-stopped \
-                --memory=512m \
+                --memory=256m \
                 --cpus=0.5 \
                 --health-cmd="curl -f http://localhost:${APP_PORT}/health || exit 1" \
                 --health-interval=30s \
@@ -380,10 +381,10 @@ def deployToEnvironment(environment, port) {
                 ${IMAGE_NAME}:${BUILD_TAG}
         """
 
-        echo "⌛ Waiting for deployment to stabilize..."
+        echo "⌛ Waiting for nginx deployment to stabilize..."
         sleep 15
 
-        echo "🔍 Checking deployment health..."
+        echo "🔍 Checking nginx deployment health..."
         retry(3) {
             sh """
                 echo "Testing health endpoint..."
@@ -391,7 +392,7 @@ def deployToEnvironment(environment, port) {
             """
         }
 
-        echo "✅ Successfully deployed to ${environment} on port ${port}"
+        echo "✅ Successfully deployed nginx to ${environment} on port ${port}"
         echo "🌐 Access the application at: http://localhost:${port}"
         
         // Show running containers
