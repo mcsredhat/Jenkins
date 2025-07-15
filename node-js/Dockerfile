@@ -38,13 +38,13 @@ RUN apt-get update && \
     groupadd -g ${GROUPID} ${GROUPNAME} && \
     useradd -m -u ${USERID} -g ${GROUPID} -s ${SHELL} ${USERNAME}
 
-# Copy package files and install dependencies before copying full source
-COPY package*.json ./
+# Copy package files from app directory and install dependencies
+COPY ./app/package*.json ./
 RUN npm ci --only=production && \
     npm cache clean --force
 
-# Copy application code
-COPY . ./
+# Copy application code from app directory
+COPY ./app ./
 
 # Create directories and set permissions
 RUN mkdir -p /app/data /app/logs && \
