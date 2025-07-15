@@ -12,6 +12,8 @@ pipeline {
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         APP_PORT = "3000"
         TEST_PORT = "3030"
+        // Define the application directory
+        APP_DIR = "node-js"
     }
 
     stages {
@@ -27,8 +29,17 @@ pipeline {
                     
                     echo "Working in directory: ${pwd()}"
                     sh "ls -la"
-                    echo "Checking for required files:"
-                    sh "ls -la Dockerfile package*.json server.js || echo 'Some files not found'"
+                    
+                    // Check if the app directory exists
+                    echo "Checking for application directory: ${APP_DIR}"
+                    sh "ls -la ${APP_DIR}/ || echo 'Application directory not found'"
+                    
+                    // Check for required files in the app directory
+                    echo "Checking for required files in ${APP_DIR}:"
+                    sh """
+                        cd ${APP_DIR}
+                        ls -la Dockerfile package*.json server.js || echo 'Some files not found in ${APP_DIR}'
+                    """
                 }
             }
         }
@@ -38,9 +49,12 @@ pipeline {
                 echo "🔧 Building Docker image..."
                 script {
                     try {
-                        def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
-                        image.tag("jenkins-latest")
-                        echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
+                        // Change to the application directory for building
+                        dir(APP_DIR) {
+                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
+                            image.tag("jenkins-latest")
+                            echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
+                        }
                     } catch (Exception e) {
                         echo "❌ Build failed: ${e.getMessage()}"
                         throw e
