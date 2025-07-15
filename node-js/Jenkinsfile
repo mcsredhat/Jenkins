@@ -12,7 +12,7 @@ pipeline {
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         PROJECT_PATH = 'node-js'
         DOCKERFILE_PATH = 'node-js/Dockerfile'
-        TEST_PORT = "${8000 + env.BUILD_NUMBER.toInteger() % 1000}"
+        TEST_PORT = "${3030}"
     }
 
     stages {
