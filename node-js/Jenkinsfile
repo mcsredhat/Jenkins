@@ -10,8 +10,7 @@ pipeline {
         CONTAINER_NAME = "node-app-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        PROJECT_PATH = 'node-js'
-        DOCKERFILE_PATH = 'node-js/Dockerfile'
+        APP_PORT = "3000"
         TEST_PORT = "3030"
     }
 
@@ -25,14 +24,11 @@ pipeline {
                     echo "Current branch: ${env.BRANCH_NAME ?: 'main'}"
                     echo "Git commit: ${env.GIT_COMMIT ?: 'unknown'}"
                     echo "Repository URL: ${GITHUB_REPO}"
-                    echo "Project path: ${PROJECT_PATH}"
                     
-                    dir("${PROJECT_PATH}") {
-                        echo "Working in directory: ${pwd()}"
-                        sh "ls -la"
-                        echo "Contents of app directory:"
-                        sh "ls -la app/ || echo 'app directory not found'"
-                    }
+                    echo "Working in directory: ${pwd()}"
+                    sh "ls -la"
+                    echo "Checking for required files:"
+                    sh "ls -la Dockerfile package*.json server.js || echo 'Some files not found'"
                 }
             }
         }
@@ -41,16 +37,13 @@ pipeline {
             steps {
                 echo "🔧 Building Docker image..."
                 script {
-                    dir("${PROJECT_PATH}") {
-                        try {
-                            // Explicitly specify Dockerfile path and context
-                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", "-f ${DOCKERFILE_PATH} .")
-                            image.tag("jenkins-latest")
-                            echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
-                        } catch (Exception e) {
-                            echo "❌ Build failed: ${e.getMessage()}"
-                            throw e
-                        }
+                    try {
+                        def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
+                        image.tag("jenkins-latest")
+                        echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
+                    } catch (Exception e) {
+                        echo "❌ Build failed: ${e.getMessage()}"
+                        throw e
                     }
                 }
             }
@@ -63,9 +56,9 @@ pipeline {
                     try {
                         sh """
                             docker run -d --name ${TEST_CONTAINER_NAME} \
-                            -p ${TEST_PORT}:${TEST_PORT} \
+                            -p ${TEST_PORT}:${APP_PORT} \
                             -e ENVIRONMENT=test \
-                            -e APP_PORT=${TEST_PORT} \
+                            -e APP_PORT=${APP_PORT} \
                             ${IMAGE_NAME}:${BUILD_TAG}
                         """
 
@@ -182,22 +175,27 @@ pipeline {
             echo "✅ Pipeline completed successfully!"
             script {
                 try {
-                    emailext(
-                        subject: "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                        body: """
-                            ✔️ Build succeeded!
+                    // Only send email if email configuration is available
+                    if (env.EMAIL_CONFIGURED == 'true') {
+                        emailext(
+                            subject: "✅ Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            body: """
+                                ✔️ Build succeeded!
 
-                            Job: ${env.JOB_NAME}
-                            Build Number: ${env.BUILD_NUMBER}
-                            Branch: ${env.BRANCH_NAME ?: 'main'}
-                            Image: ${IMAGE_NAME}:${BUILD_TAG}
+                                Job: ${env.JOB_NAME}
+                                Build Number: ${env.BUILD_NUMBER}
+                                Branch: ${env.BRANCH_NAME ?: 'main'}
+                                Image: ${IMAGE_NAME}:${BUILD_TAG}
 
-                            GitHub: ${GITHUB_REPO}
-                            Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
-                            Build URL: ${env.BUILD_URL}
-                        """,
-                        recipientProviders: [developers()]
-                    )
+                                GitHub: ${GITHUB_REPO}
+                                Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
+                                Build URL: ${env.BUILD_URL}
+                            """,
+                            recipientProviders: [developers()]
+                        )
+                    } else {
+                        echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
+                    }
                 } catch (Exception e) {
                     echo "⚠️ Failed to send success email: ${e.getMessage()}"
                 }
@@ -208,20 +206,25 @@ pipeline {
             echo "❌ Pipeline failed!"
             script {
                 try {
-                    emailext(
-                        subject: "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                        body: """
-                            ❌ Build failed!
+                    // Only send email if email configuration is available
+                    if (env.EMAIL_CONFIGURED == 'true') {
+                        emailext(
+                            subject: "❌ Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            body: """
+                                ❌ Build failed!
 
-                            Job: ${env.JOB_NAME}
-                            Branch: ${env.BRANCH_NAME ?: 'main'}
-                            Build URL: ${env.BUILD_URL}
+                                Job: ${env.JOB_NAME}
+                                Branch: ${env.BRANCH_NAME ?: 'main'}
+                                Build URL: ${env.BUILD_URL}
 
-                            Please check the console output for details:
-                            ${env.BUILD_URL}console
-                        """,
-                        recipientProviders: [developers(), requestor()]
-                    )
+                                Please check the console output for details:
+                                ${env.BUILD_URL}console
+                            """,
+                            recipientProviders: [developers(), requestor()]
+                        )
+                    } else {
+                        echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
+                    }
                 } catch (Exception e) {
                     echo "⚠️ Failed to send failure email: ${e.getMessage()}"
                 }
@@ -243,12 +246,13 @@ def deployToEnvironment(environment, port) {
             docker rm ${containerName} || true
             docker run -d \
                 --name ${containerName} \
-                -p ${port}:3000 \
+                -p ${port}:${APP_PORT} \
                 -e ENVIRONMENT=${environment} \
+                -e APP_PORT=${APP_PORT} \
                 --restart=unless-stopped \
                 --memory=512m \
                 --cpus=0.5 \
-                --health-cmd="curl -f http://localhost:3000/health || exit 1" \
+                --health-cmd="curl -f http://localhost:${APP_PORT}/health || exit 1" \
                 --health-interval=30s \
                 --health-timeout=10s \
                 --health-retries=3 \
