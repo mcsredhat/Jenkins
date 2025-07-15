@@ -39,15 +39,12 @@ RUN apt-get update && \
     useradd -m -u ${USERID} -g ${GROUPID} -s ${SHELL} ${USERNAME}
 
 # Copy package files and install dependencies
-# Changed from ./app/package*.json to ./package*.json
 COPY package*.json ./
 RUN npm install --omit=dev && \
-npm cache clean --force 
+    npm cache clean --force
 
-
-# Copy application code
-# Changed from ./app ./ to . ./
-COPY . ./
+# Copy application code (excluding files in .dockerignore)
+COPY server.js ./
 
 # Create directories and set permissions
 RUN mkdir -p /app/data /app/logs && \
