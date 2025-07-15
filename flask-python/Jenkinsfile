@@ -10,6 +10,9 @@ pipeline {
         CONTAINER_NAME = "flask-app-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
+        PROJECT_PATH = 'flask-python'
+        DOCKERFILE_PATH = 'flask-python/Dockerfile'
+        JENKINSFILE_PATH = 'flask-python/Jenkinsfile'
     }
 
     stages {
