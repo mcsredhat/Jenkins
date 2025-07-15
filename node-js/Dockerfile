@@ -38,19 +38,15 @@ RUN apt-get update && \
     groupadd -g ${GROUPID} ${GROUPNAME} && \
     useradd -m -u ${USERID} -g ${GROUPID} -s ${SHELL} ${USERNAME}
 
-# Copy package files from app directory
-COPY ./app/package*.json ./
-
-# Install dependencies (use npm install if package-lock.json doesn't exist)
-RUN if [ -f package-lock.json ]; then \
-        npm ci --omit=dev; \
-    else \
-        npm install --production; \
-    fi && \
+# Copy package files and install dependencies
+# Changed from ./app/package*.json to ./package*.json
+COPY package*.json ./
+RUN npm ci --only=production && \
     npm cache clean --force
 
-# Copy application code from app directory
-COPY ./app ./
+# Copy application code
+# Changed from ./app ./ to . ./
+COPY . ./
 
 # Create directories and set permissions
 RUN mkdir -p /app/data /app/logs && \
