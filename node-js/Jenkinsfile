@@ -12,7 +12,7 @@ pipeline {
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         PROJECT_PATH = 'node-js'
         DOCKERFILE_PATH = 'node-js/Dockerfile'
-        TEST_PORT = "${3030}"
+        TEST_PORT = "3030"
     }
 
     stages {
@@ -43,7 +43,8 @@ pipeline {
                 script {
                     dir("${PROJECT_PATH}") {
                         try {
-                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}")
+                            // Explicitly specify Dockerfile path and context
+                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", "-f ${DOCKERFILE_PATH} .")
                             image.tag("jenkins-latest")
                             echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         } catch (Exception e) {
@@ -96,13 +97,14 @@ pipeline {
                         sh """
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                             aquasec/trivy:latest image \
-                            --exit-code 0 --severity HIGH,CRITICAL \
+                            --exit-code 1 --severity HIGH,CRITICAL \
                             --format table \
                             ${IMAGE_NAME}:${BUILD_TAG}
                         """
-                        echo "✅ Security scan completed"
+                        echo "✅ Security scan completed without critical issues"
                     } catch (Exception e) {
-                        echo "⚠️ Security scan completed with warnings: ${e.getMessage()}"
+                        echo "❌ Security scan failed or found HIGH/CRITICAL vulnerabilities: ${e.getMessage()}"
+                        throw e
                     }
                 }
             }
