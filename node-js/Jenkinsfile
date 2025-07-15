@@ -38,7 +38,9 @@ pipeline {
                     echo "Checking for required files in ${APP_DIR}:"
                     sh """
                         cd ${APP_DIR}
-                        ls -la Dockerfile package*.json /app/server.js || echo 'Some files not found in ${APP_DIR}'
+                        ls -la Dockerfile package*.json ./app/server.js || echo 'Some files not found in ${APP_DIR}'
+                        cd ${APP_DIR}/app
+                        ls -la server.js || echo 'Some files not found in ${APP_DIR}'
                     """
                 }
             }
