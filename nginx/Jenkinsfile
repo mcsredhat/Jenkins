@@ -4,16 +4,16 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'https://index.docker.io/v1/'
         DOCKER_USERNAME = 'farajassulai'
-        DOCKER_REPO = 'flask-python-app'
+        DOCKER_REPO = 'nginx-app'
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
-        CONTAINER_NAME = "flask-python-${env.BUILD_NUMBER}"
+        CONTAINER_NAME = "nginx-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-container-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        APP_PORT = "5000"
-        TEST_PORT = "5050"
+        APP_PORT = "8888"
+        TEST_PORT = "9999"
         // Define the application directory
-        APP_DIR = "flask-python"
+        APP_DIR = "nginx"
         
         // ENABLE DEPLOYMENT STAGES - Set these to enable stages
         SKIP_SECURITY_SCAN = 'false'  // Changed from 'true' to 'false'
@@ -51,7 +51,7 @@ pipeline {
                     echo "Checking for required files in ${APP_DIR}:"
                     sh """
                         cd ${APP_DIR}
-                        ls -la Dockerfile requirements.txt ./src/app.py || echo 'Some files not found in ${APP_DIR}'
+                        ls -la Dockerfile Jenkinsfile ./conf/server.conf || echo 'Some files not found in ${APP_DIR}'
                     """
                 }
             }
@@ -65,7 +65,7 @@ pipeline {
                         // Change to the application directory for building
                         dir(APP_DIR) {
                             def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
-                            image.tag("jenk-flask-python")
+                            image.tag("jenk-nginx")
                             echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         }
                     } catch (Exception e) {
@@ -244,7 +244,7 @@ pipeline {
             steps {
                 echo "🚀 Deploying to staging..."
                 script {
-                    deployToEnvironment('staging', '8686')
+                    deployToEnvironment('staging', '8989')
                 }
             }
         }
@@ -272,7 +272,7 @@ pipeline {
                     }
                     
                     echo "🚀 Deploying to production..."
-                    deployToEnvironment('production', '9090')  // Changed from port 80 to 9090 to avoid permission issues
+                    deployToEnvironment('production', '9191')  // Changed from port 80 to 9090 to avoid permission issues
                 }
             }
         }
