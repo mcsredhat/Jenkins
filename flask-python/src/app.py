@@ -1,45 +1,73 @@
 from flask import Flask, jsonify
 import os
-import sys
-from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-env = os.environ.get('ENVIRONMENT', 'development')
-port = int(os.environ.get('PORT', 5000))
+
+# Get configuration from environment
+app.config['ENV'] = os.getenv('ENVIRONMENT', 'development')
+PORT = int(os.getenv('APP_PORT', 5000))
 
 @app.route('/')
 def hello():
-    return f"Hello from Docker Lesson 4! Running in {env} environment."
+    """Main endpoint"""
+    return jsonify({
+        'message': 'Hello from Flask Python App!',
+        'version': '1.0.0',
+        'environment': app.config['ENV'],
+        'status': 'running'
+    })
 
 @app.route('/health')
-def health_check():
-    """Health check endpoint for monitoring and CI/CD"""
+def health():
+    """Health check endpoint for Docker and Jenkins"""
     return jsonify({
         'status': 'healthy',
-        'environment': env,
-        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'flask-python-app',
         'version': '1.0.0'
     }), 200
 
 @app.route('/info')
 def info():
-    """Application information endpoint"""
+    """Application info endpoint"""
     return jsonify({
-        'app_name': 'Flask Docker App',
-        'environment': env,
-        'port': port,
-        'python_version': sys.version,
-        'timestamp': datetime.utcnow().isoformat()
+        'app_name': 'Flask Python Application',
+        'version': '1.0.0',
+        'environment': app.config['ENV'],
+        'port': PORT,
+        'flask_version': '3.1.0'
     })
 
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify({'error': 'Not found'}), 404
+    """Handle 404 errors"""
+    return jsonify({
+        'error': 'Not Found',
+        'message': 'The requested resource was not found',
+        'status_code': 404
+    }), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
+    """Handle 500 errors"""
+    logger.error(f"Internal server error: {error}")
+    return jsonify({
+        'error': 'Internal Server Error',
+        'message': 'An internal server error occurred',
+        'status_code': 500
+    }), 500
 
-if __name__ == "__main__":
-    print(f"Starting Flask application in {env} environment on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=(env == 'development'))
+if __name__ == '__main__':
+    logger.info(f"Starting Flask application on port {PORT}")
+    logger.info(f"Environment: {app.config['ENV']}")
+    
+    # Run the application
+    app.run(
+        host='0.0.0.0',
+        port=PORT,
+        debug=(app.config['ENV'] == 'development')
+    )
