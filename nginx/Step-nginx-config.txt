@@ -1,0 +1,412 @@
+Step 1: Create directories and files on host
+# Create directories
+sudo mkdir -p /nginx/conf /nginx/logs /nginx/data 
+======================
+Step 3: Create nginx configuration files
+Create nginx.conf template with environment variable support
+sudo vi /nginx/nginx.conf
+-----------------------
+# Main nginx configuration file
+user nginxusr;
+worker_processes auto;
+error_log /var/log/nginx/error.log notice;
+pid /run/nginx.pid;
+
+# Load dynamic modules
+include /usr/share/nginx/modules/*.conf;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # Logging configuration
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    # Basic settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 4096;
+    server_tokens off;
+
+    # MIME types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+
+    # Security headers (applied globally)
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=1r/s;
+
+    # Client settings
+    client_max_body_size 16M;
+    client_body_buffer_size 128k;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 4k;
+    client_body_timeout 12;
+    client_header_timeout 12;
+    send_timeout 10;
+
+    # Buffer settings
+    proxy_buffering on;
+    proxy_buffer_size 128k;
+    proxy_buffers 4 256k;
+    proxy_busy_buffers_size 256k;
+
+    # SSL settings (if you plan to use HTTPS later)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+
+    # Include server configurations
+    include /etc/nginx/conf.d/*.conf;
+}
+========================================
+Create server.conf that uses environment variables
+sudo vi /nginx/conf/server.conf
+server {
+    listen 8080;
+    server_name localhost;
+    
+    # Additional security headers (main ones are in nginx.conf)
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    
+    # Hide nginx version
+    server_tokens off;
+    
+    # Root directory
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+    
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    
+    # Main location block
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    
+    # Error pages
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+    
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+    
+    # Deny access to .htaccess files
+    location ~ /\.ht {
+        deny all;
+    }
+    
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+    
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/javascript application/json;
+    
+    # Static files caching
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+#################################
+DOCKER FILE 
+##################################
+# Docker images (docker pull nginx:alpine)
+FROM nginx:alpine
+
+# Add metadata images 
+LABEL maintainer="farajassulai@gmail.com" \
+      environment="production" \
+      description="Create webserver using nginx and secure by using non-root user" \
+      created_date="2025-6-16" \
+      APP_name="webserver-nginx" \
+      APP_VER="1.0.0" 
+
+# Add the arguments variables 
+ARG NGINXVER=alpine
+ARG USER_ID=1111
+ARG USER_NAME=nginxusr
+ARG GROUP_ID=1111
+ARG GROUP_NAME=nginxusr
+ARG APP_PORT=8080
+ARG HOST=localhost
+ARG APP_DIR=/etc/nginx 
+ARG MOUNT1=/nginx/data 
+ARG MOUNT2=/nginx/logs 
+ARG LOCAL_URL=http://localhost:8080/health 
+ARG SHELL=/bin/bash 
+ARG VAR_log=/var/log/nginx
+ARG VAR_cache=/var/cache/nginx
+ARG dir_tmp=/tmp
+ARG dir_run=/run 
+
+# The environment variables for the image 
+ENV APP_version=${NGINXVER} \
+      port=${APP_PORT} \
+      USER_ID=${USER_ID} \
+      USER_NAME=${USER_NAME} \
+      GROUP_ID=${GROUP_ID} \
+      GROUP_NAME=${GROUP_NAME} \
+      APP_PORT=${APP_PORT} \
+      HOST=${HOST} \
+      APP_DIR=${APP_DIR} \
+      MOUNT1=${MOUNT1} \
+      MOUNT2=${MOUNT2} \
+      LOCAL_URL=${LOCAL_URL} \
+      log_dir=${VAR_log} \
+      cache_dir=${VAR_cache} \
+      dir_tmp=${dir_tmp} \
+      dir_run=${dir_run} 
+
+# Create working directory 
+WORKDIR ${APP_DIR} 
+
+# Install updates & packages, create user and group, create directories, set permissions
+RUN apk update && \
+      apk add --no-cache curl bash && \
+      mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} ${VAR_log} ${VAR_cache} ${dir_tmp} ${dir_run} \
+      ${VAR_cache}/client_temp ${VAR_cache}/proxy_temp ${VAR_cache}/fastcgi_temp \
+      ${VAR_cache}/uwsgi_temp ${VAR_cache}/scgi_temp && \
+      touch ${VAR_log}/access.log ${VAR_log}/error.log && \
+      addgroup -g ${GROUP_ID} ${GROUP_NAME} && \
+      adduser -u ${USER_ID} -D -h ${APP_DIR} -s ${SHELL} -G ${GROUP_NAME} ${USER_NAME} && \
+      chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} ${VAR_log} ${VAR_cache} ${dir_tmp} ${dir_run} && \
+      chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2} ${VAR_log} ${VAR_cache} ${dir_tmp} ${dir_run} \
+      ${VAR_cache}/client_temp ${VAR_cache}/proxy_temp ${VAR_cache}/fastcgi_temp \
+      ${VAR_cache}/uwsgi_temp ${VAR_cache}/scgi_temp && \
+      chmod 644 ${VAR_log}/*.log && \
+      rm -rf /var/cache/apk/*
+
+# Copy the project files 
+COPY conf/server.conf /etc/nginx/conf.d/server.conf
+
+# Add the mount point volumes
+VOLUME ["${MOUNT1}", "${MOUNT2}"]
+
+# Identify the shell to be used in image 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Port to be used internally in the image 
+EXPOSE ${APP_PORT} 
+
+# Switch to non-root user
+USER ${USER_ID}
+
+# Signal stop for the image 
+STOPSIGNAL SIGTERM 
+
+# Healthcheck for the image 
+HEALTHCHECK --interval=30s \
+      --timeout=30s \
+      --start-period=5s \
+      --retries=3 \
+      CMD curl -f ${LOCAL_URL} || exit 1
+
+# Run the command 
+CMD ["nginx", "-g", "daemon off;"]
+
+#################################
+DOCKERCOMPOSE FILE
+#################################
+services:
+  nginx-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NGINXVER: alpine
+        USER_ID: 1111
+        USER_NAME: nginxusr
+        GROUP_ID: 1111
+        GROUP_NAME: nginxusr
+        APP_ENV: production
+        BASH_SHELL: /bin/bash
+        APP_DIR: /etc/nginx 
+        MOUNT1: /nginx/data
+        MOUNT2: /nginx/logs
+        LOCAL_URL: http://localhost:8080/health
+        VAR_log: /var/log/nginx
+        VAR_cache: /var/cache/nginx
+        dir_tmp: /tmp
+        dir_run: /run 
+
+    container_name: nginx_webserver_project
+    hostname: nginx-hostname
+
+    labels:
+      - "maintainer=farajassulai@gmail.com"
+      - "app=nginx_frontend_project"
+      - "type=nginx_alpine"
+
+    environment:
+      NGINX_VER: alpine
+      USER_ID: 1111
+      USER_NAME: nginxusr
+      GROUP_ID: 1111
+      GROUP_NAME: nginxusr
+      APP_ENV: production
+      BASH_SHELL: /bin/bash
+      APP_DIR: /etc/nginx 
+      MOUNT1: /nginx/data
+      MOUNT2: /nginx/logs
+      BACKEND_HOST: database
+      TZ: GMT+2
+      LOCAL_URL: http://localhost:8080/health
+      log_dir: /var/log/nginx
+      cache_dir: /var/cache/nginx
+      dir_tmp: /tmp
+      dir_run: /run
+
+    networks:
+      - nginx_frontend_project-network
+
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
+    # nginx network ports
+    ports:
+     - "8080:8080"
+
+    volumes:
+      # Read-only volume for nginx configuration
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro 
+      - ./conf/server.conf:/etc/nginx/conf.d/server.conf:ro 
+      # Read-write volumes for nginx project and logs
+      - nginx_data:/nginx/data:rw
+      - nginx_logs:/nginx/logs:rw
+
+    # Resource limits - using deploy syntax for modern compose
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.25"
+        reservations:
+          memory: 256M
+
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 4096
+      nproc:
+        soft: 512
+        hard: 1024
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        compress: "true"
+
+    security_opt:
+      - "no-new-privileges:true"
+
+    # Minimal capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+
+    # Tmpfs mounts for temporary directories
+    tmpfs:
+      - /tmp:rw,size=10m,mode=1777
+      - /var/cache/nginx/client_temp:size=10m,mode=1777 
+      - /var/cache/nginx/proxy_temp:size=10m,mode=1777 
+      - /var/cache/nginx/fastcgi_temp:size=10m,mode=1777 
+      - /var/cache/nginx/uwsgi_temp:size=10m,mode=1777 
+      - /var/cache/nginx/scgi_temp:size=10m,mode=1777 
+      - /run:rw,size=10m,mode=1777
+
+    # Run as non-privileged user
+    user: "1111:1111"
+
+    # Container restart policy
+    restart: unless-stopped
+
+    # Working directory
+    working_dir: /nginx
+
+# Define named volumes
+volumes:
+  nginx_data:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  nginx_frontend_project-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+#########################################
+docker compose build --no-cache
+docker compose up -d
+docker ps -a  
+docker compose logs nginx-webserver
+docker-compose exec nginx-webserver nginx -t
+curl http://localhost:8080 
+docker compose exec nginx-webserver cat /etc/nginx/nginx.conf
+docker compose exec nginx-webserver /bin/bash -c "id"
+
+
+
