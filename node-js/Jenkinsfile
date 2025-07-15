@@ -27,7 +27,6 @@ pipeline {
                     echo "Repository URL: ${GITHUB_REPO}"
                     echo "Project path: ${PROJECT_PATH}"
                     
-                    // Change to project directory
                     dir("${PROJECT_PATH}") {
                         echo "Working in directory: ${pwd()}"
                         sh "ls -la"
@@ -63,8 +62,9 @@ pipeline {
                     try {
                         sh """
                             docker run -d --name ${TEST_CONTAINER_NAME} \
-                            -p ${TEST_PORT}:3000 \
+                            -p ${TEST_PORT}:${TEST_PORT} \
                             -e ENVIRONMENT=test \
+                            -e APP_PORT=${TEST_PORT} \
                             ${IMAGE_NAME}:${BUILD_TAG}
                         """
 
@@ -257,9 +257,7 @@ def deployToEnvironment(environment, port) {
         sleep 15
 
         retry(3) {
-            sh """
-                curl -f http://localhost:${port}/health || curl -f http://localhost:${port}/
-            """
+            sh "curl -f http://localhost:${port}/health || curl -f http://localhost:${port}/"
         }
 
         echo "✅ Successfully deployed to ${environment}"
