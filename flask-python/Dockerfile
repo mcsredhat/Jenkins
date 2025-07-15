@@ -42,8 +42,6 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 
 # Copy the directory project code (docker cp src "container-id":/app/src)
 COPY src/ ./src/
-RUN npm install --omit=dev && \
-    npm cache clean --force
 
 # VOLUME create mount point (docker run --volume=/app/data --volume=/app/logs "image")
 VOLUME ["/app/data", "/app/logs"]
