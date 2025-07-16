@@ -149,25 +149,36 @@ pipeline {
                     try {
                         dir(APP_DIR) {
                             // Start the MySQL container for testing
-                            sh """
-                                docker run -d \
-                                    --name ${TEST_CONTAINER_NAME} \
-                                    -p ${TEST_PORT}:${APP_PORT} \
-                                    -e MYSQL_ROOT_PASSWORD=rootpass \
-                                    -e MYSQL_DATABASE=testdb \
-                                    -e MYSQL_USER=testuser \
-                                    -e MYSQL_PASSWORD=testpass \
-                                    ${IMAGE_NAME}:${BUILD_TAG}
-                            """
-
+                            
+                            // Start container
+                            sh '''
+                                docker run -d --name test-mysql-3 -p 3366:3306 \
+                                -e MYSQL_ROOT_PASSWORD=rootpass \
+                                -e MYSQL_DATABASE=testdb \
+                                -e MYSQL_USER=testuser \
+                                -e MYSQL_PASSWORD=testpass \
+                                farajassulai/mysql-db:3-2e83847
+                            '''
+                            
+                            // Wait for MySQL to be ready
                             echo "⌛ Waiting for MySQL to start..."
                             retry(10) {
-                                sleep 15
-                                sh """
-                                    echo "Testing MySQL connection..."
-                                    docker exec ${TEST_CONTAINER_NAME} mysqladmin ping -h localhost -u root --password=rootpass || exit 1
-                                """
+                                sleep(10)
+                                sh '''
+                                    # Check if container is running
+                                    if ! docker ps | grep -q test-mysql-3; then
+                                        echo "Container not running, checking logs:"
+                                        docker logs test-mysql-3
+                                        exit 1
+                                    fi
+                                    
+                                    # Test connection using TCP instead of socket
+                                    docker exec test-mysql-3 mysqladmin ping -h 127.0.0.1 -P 3306 -u root --password=rootpass --connect-timeout=5
+                                '''
                             }
+                            
+                            echo "✅ MySQL is ready!"
+                        }
 
                             echo "🔍 Running MySQL tests..."
                             sh """
