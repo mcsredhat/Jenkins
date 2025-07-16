@@ -1,21 +1,14 @@
 -- MySQL Initialization Script
 -- This script runs automatically when the container starts for the first time
 
--- Create additional databases if needed
--- CREATE DATABASE IF NOT EXISTS `additional_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Use the appropriate database (testdb for testing, mydb for deployment)
+SET @db_name = IF(EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'testdb'), 'testdb', 'mydb');
+SET @sql = CONCAT('USE `', @db_name, '`;');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
--- Grant additional privileges to the application user
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES
-ON `mydb`.* TO 'sqluser'@'%';
-
--- Create additional users if needed
--- CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
--- GRANT SELECT ON `mydb`.* TO 'readonly_user'@'%';
-
--- Create some sample tables (optional)
-USE `mydb`;
-
--- Sample users table
+-- Create sample tables
 CREATE TABLE IF NOT EXISTS `users` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `username` VARCHAR(50) NOT NULL UNIQUE,
@@ -42,7 +35,7 @@ CREATE TABLE IF NOT EXISTS `posts` (
     INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert some sample data (optional)
+-- Insert sample data
 INSERT IGNORE INTO `users` (`username`, `email`, `password_hash`) VALUES
 ('admin', 'admin@example.com', '$2y$10$example_hash_here'),
 ('testuser', 'test@example.com', '$2y$10$example_hash_here2');
