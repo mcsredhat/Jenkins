@@ -154,13 +154,14 @@ pipeline {
                                 -v mysql_logs:/var/log/mysql \
                                 --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
                                 --health-interval=10s \
-                                --health-timeout=5s \
-                                --health-retries=5 \
+                                --health-timeout=10s \
+                                --health-retries=10 \
+                                --health-start-period=30s \
                                 ${IMAGE_NAME}:${BUILD_TAG}
                             """
                             echo "⌛ Waiting for MySQL to start..."
-                            retry(15) {
-                                sleep(15)
+                            retry(20) {
+                                sleep(10)
                                 sh """
                                     if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
                                         echo "Container not running, checking logs:"
@@ -441,7 +442,8 @@ def deployToEnvironment(environment, port) {
                 --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
                 --health-interval=30s \
                 --health-timeout=10s \
-                --health-retries=3 \
+                --health-retries=10 \
+                --health-start-period=30s \
                 -v mysql_data_${environment}:/var/lib/mysql \
                 -v mysql_logs_${environment}:/var/log/mysql \
                 ${IMAGE_NAME}:${BUILD_TAG}
