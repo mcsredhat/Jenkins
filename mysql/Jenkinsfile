@@ -25,7 +25,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "📦 Checking out code from GitHub repository..."
+                echo "Checking out code from GitHub repository..."
                 checkout scm
 
                 script {
@@ -34,11 +34,11 @@ pipeline {
                     echo "Repository URL: ${GITHUB_REPO}"
                     echo "Working in directory: ${pwd()}"
                     sh "ls -la"
-                    echo "🐳 Checking Docker environment..."
+                    echo "Checking Docker environment..."
                     sh """
-                        docker --version || echo "⚠️ Docker not found"
-                        docker compose version 2>/dev/null && echo "✅ Docker Compose (plugin) available" || echo "⚠️ Docker Compose plugin not found"
-                        docker-compose --version 2>/dev/null && echo "✅ Docker Compose (standalone) available" || echo "⚠️ Docker Compose standalone not found"
+                        docker --version || echo "Docker not found"
+                        docker compose version 2>/dev/null && echo "Docker Compose (plugin) available" || echo "Docker Compose plugin not found"
+                        docker-compose --version 2>/dev/null && echo "Docker Compose (standalone) available" || echo "Docker Compose standalone not found"
                     """
                     echo "Checking for application directory: ${APP_DIR}"
                     sh "ls -la ${APP_DIR}/ || echo 'Application directory not found'"
@@ -54,7 +54,7 @@ pipeline {
 
         stage('Setup Environment') {
             steps {
-                echo "🔧 Setting up environment..."
+                echo "Setting up environment..."
                 script {
                     dir(APP_DIR) {
                         sh """
@@ -72,7 +72,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                echo "🔧 Building Docker image..."
+                echo "Building Docker image..."
                 script {
                     try {
                         dir(APP_DIR) {
@@ -86,7 +86,7 @@ pipeline {
                                 returnStdout: true
                             ).trim()
                             if (buildResult.contains('compose_failed')) {
-                                echo "⚠️ Docker Compose not available, building manually..."
+                                echo "Docker Compose not available, building manually..."
                                 sh """
                                     docker build -t ${IMAGE_NAME}:${BUILD_TAG} . 2>&1 | tee build.log
                                     if [ \${PIPESTATUS[0]} -ne 0 ]; then
@@ -97,7 +97,7 @@ pipeline {
                                     docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:latest
                                 """
                             } else {
-                                echo "✅ Built with Docker Compose"
+                                echo "Built with Docker Compose"
                                 sh """
                                     COMPOSE_IMAGE=\$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep mysql | head -1)
                                     if [ ! -z "\$COMPOSE_IMAGE" ]; then
@@ -115,10 +115,10 @@ pipeline {
                                     fi
                                 """
                             }
-                            echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
+                            echo "Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         }
                     } catch (Exception e) {
-                        echo "❌ Build failed: ${e.getMessage()}"
+                        echo "Build failed: ${e.getMessage()}"
                         sh "cat ${APP_DIR}/build.log || echo 'No build log available'"
                         throw e
                     }
@@ -128,7 +128,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo "🧪 Running containerized tests..."
+                echo "Running containerized tests..."
                 script {
                     try {
                         dir(APP_DIR) {
@@ -159,7 +159,7 @@ pipeline {
                                 --health-start-period=60s \
                                 ${IMAGE_NAME}:${BUILD_TAG}
                             """
-                            echo "⌛ Waiting for MySQL to start..."
+                            echo "Waiting for MySQL to start..."
                             retry(25) {
                                 sleep(10)
                                 sh """
@@ -177,8 +177,8 @@ pipeline {
                                     docker exec ${TEST_CONTAINER_NAME} mysqladmin ping -h 127.0.0.1 -P 3306 -u root --password=rootpass --connect-timeout=5
                                 """
                             }
-                            echo "✅ MySQL is ready!"
-                            echo "🔍 Running MySQL tests..."
+                            echo "MySQL is ready!"
+                            echo "Running MySQL tests..."
                             sh """
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "SHOW DATABASES;"
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; SHOW TABLES;"
@@ -187,10 +187,10 @@ pipeline {
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; SELECT * FROM test_table;"
                                 docker exec ${TEST_CONTAINER_NAME} mysql -utestuser -ptestpass -e "SHOW DATABASES;"
                             """
-                            echo "✅ All MySQL tests passed!"
+                            echo "All MySQL tests passed!"
                         }
                     } catch (Exception e) {
-                        echo "❌ Test failed: ${e.getMessage()}"
+                        echo "Test failed: ${e.getMessage()}"
                         sh "docker logs ${TEST_CONTAINER_NAME} || echo 'Could not retrieve logs'"
                         throw e
                     } finally {
@@ -211,7 +211,7 @@ pipeline {
                 }
             }
             steps {
-                echo "🔍 Running security scan with Trivy..."
+                echo "Running security scan with Trivy..."
                 script {
                     try {
                         def trivyAvailable = sh(
@@ -219,11 +219,11 @@ pipeline {
                             returnStatus: true
                         )
                         if (trivyAvailable != 0) {
-                            echo "⚠️ Trivy not available, skipping security scan"
+                            echo "Trivy not available, skipping security scan"
                             currentBuild.result = 'UNSTABLE'
                             return
                         }
-                        echo "📊 Running comprehensive vulnerability scan..."
+                        echo "Running comprehensive vulnerability scan..."
                         sh """
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                             aquasec/trivy:latest image \
@@ -231,7 +231,7 @@ pipeline {
                             --severity LOW,MEDIUM,HIGH,CRITICAL \
                             ${IMAGE_NAME}:${BUILD_TAG} || true
                         """
-                        echo "🚨 Checking for CRITICAL vulnerabilities only..."
+                        echo "Checking for CRITICAL vulnerabilities only..."
                         def criticalScanResult = sh(
                             script: """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -243,14 +243,14 @@ pipeline {
                             returnStatus: true
                         )
                         if (criticalScanResult == 0) {
-                            echo "✅ No CRITICAL vulnerabilities found"
+                            echo "No CRITICAL vulnerabilities found"
                         } else {
-                            echo "⚠️ CRITICAL vulnerabilities found - marking build as unstable"
+                            echo "CRITICAL vulnerabilities found - marking build as unstable"
                             currentBuild.result = 'UNSTABLE'
                         }
-                        echo "✅ Security scan completed"
+                        echo "Security scan completed"
                     } catch (Exception e) {
-                        echo "❌ Security scan failed: ${e.getMessage()}"
+                        echo "Security scan failed: ${e.getMessage()}"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -268,7 +268,7 @@ pipeline {
                 }
             }
             steps {
-                echo "📤 Pushing image to Docker Hub..."
+                echo "Pushing image to Docker Hub..."
                 script {
                     try {
                         try {
@@ -283,19 +283,19 @@ pipeline {
                                     image.push("staging")
                                     image.push("develop-latest")
                                 }
-                                echo "✅ Image pushed successfully with credentials"
+                                echo "Image pushed successfully with credentials"
                             }
                         } catch (Exception credError) {
-                            echo "⚠️ Docker Hub credentials not found, attempting push without registry authentication..."
+                            echo "Docker Hub credentials not found, attempting push without registry authentication..."
                             sh """
                                 docker push ${IMAGE_NAME}:${BUILD_TAG} || echo "Push failed - check Docker Hub login"
                                 docker push ${IMAGE_NAME}:jenkins-mysql-latest || echo "Push failed - check Docker Hub login"
                             """
-                            echo "✅ Image push attempted (check Docker Hub for results)"
+                            echo "Image push attempted (check Docker Hub for results)"
                         }
                     } catch (Exception e) {
-                        echo "❌ Docker Hub push failed: ${e.getMessage()}"
-                        echo "💡 To fix: Run 'docker login' on Jenkins agent or configure 'dockerhub-credentials'"
+                        echo "Docker Hub push failed: ${e.getMessage()}"
+                        echo "To fix: Run 'docker login' on Jenkins agent or configure 'dockerhub-credentials'"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -311,7 +311,7 @@ pipeline {
                 }
             }
             steps {
-                echo "🚀 Deploying to staging..."
+                echo "Deploying to staging..."
                 script {
                     deployToEnvironment('staging', '3307')
                 }
@@ -334,11 +334,11 @@ pipeline {
                                 input message: 'Deploy to production?', ok: 'Deploy'
                             }
                         } catch (Exception e) {
-                            echo "⚠️ Production deployment approval timeout or skipped"
+                            echo "Production deployment approval timeout or skipped"
                             return
                         }
                     }
-                    echo "🚀 Deploying to production..."
+                    echo "Deploying to production..."
                     deployToEnvironment('production', '3308')
                 }
             }
@@ -347,7 +347,7 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning up..."
+            echo "Cleaning up..."
             script {
                 sh """
                     docker stop ${TEST_CONTAINER_NAME} || true
@@ -358,14 +358,14 @@ pipeline {
         }
 
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "Pipeline completed successfully!"
             script {
                 try {
                     if (env.EMAIL_CONFIGURED == 'true') {
                         emailext(
-                            subject: "✅ MySQL Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            subject: "MySQL Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
-                                ✔️ MySQL build succeeded!
+                                MySQL build succeeded!
 
                                 Job: ${env.JOB_NAME}
                                 Build Number: ${env.BUILD_NUMBER}
@@ -382,20 +382,20 @@ pipeline {
                         echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
                     }
                 } catch (Exception e) {
-                    echo "⚠️ Failed to send success email: ${e.getMessage()}"
+                    echo "Failed to send success email: ${e.getMessage()}"
                 }
             }
         }
 
         failure {
-            echo "❌ Pipeline failed!"
+            echo "Pipeline failed!"
             script {
                 try {
                     if (env.EMAIL_CONFIGURED == 'true') {
                         emailext(
-                            subject: "❌ MySQL Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            subject: "MySQL Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
-                                ❌ MySQL build failed!
+                                MySQL build failed!
 
                                 Job: ${env.JOB_NAME}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
@@ -410,13 +410,13 @@ pipeline {
                         echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
                     }
                 } catch (Exception e) {
-                    echo "⚠️ Failed to send failure email: ${e.getMessage()}"
+                    echo "Failed to send failure email: ${e.getMessage()}"
                 }
             }
         }
 
         unstable {
-            echo "⚠️ Pipeline completed with warnings."
+            echo "Pipeline completed with warnings."
         }
     }
 }
@@ -424,8 +424,50 @@ pipeline {
 def deployToEnvironment(environment, port) {
     def containerName = "mysql-app-${environment}"
     try {
-        echo "🚀 Deploying ${IMAGE_NAME}:${BUILD_TAG} to ${environment} on port ${port}"
+        echo "Deploying ${IMAGE_NAME}:${BUILD_TAG} to ${environment} on port ${port}"
         sh """
             docker stop ${containerName} || true
             docker rm ${containerName} || true
-            docker run -
+            docker run -d \
+                --name ${containerName} \
+                -p ${port}:${APP_PORT} \
+                -e MYSQL_ROOT_PASSWORD=rootpass \
+                -e MYSQL_DATABASE=mydb \
+                -e MYSQL_USER=sqluser \
+                -e MYSQL_PASSWORD=MyAppUserPass456 \
+                -e ENVIRONMENT=${environment} \
+                --restart=unless-stopped \
+                --memory=512m \
+                --cpus=0.5 \
+                --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
+                --health-interval=10s \
+                --health-timeout=10s \
+                --health-retries=15 \
+                --health-start-period=60s \
+                -v mysql_data_${environment}:/var/lib/mysql \
+                -v mysql_logs_${environment}:/var/log/mysql \
+                ${IMAGE_NAME}:${BUILD_TAG}
+        """
+        echo "Waiting for MySQL deployment to stabilize..."
+        sleep 30
+        echo "Checking MySQL deployment health..."
+        retry(5) {
+            sh """
+                echo "Testing MySQL connection..."
+                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=rootpass || exit 1
+            """
+        }
+        echo "Successfully deployed MySQL to ${environment} on port ${port}"
+        echo "Connect to MySQL at: localhost:${port}"
+        echo "Connection command: mysql -h127.0.0.1 -P${port} -uroot -prootpass"
+        sh "docker ps | grep ${containerName} || echo 'Container not found in ps'"
+    } catch (Exception e) {
+        echo "Deployment to ${environment} failed: ${e.getMessage()}"
+        echo "Checking what went wrong..."
+        sh """
+            docker logs ${containerName} || echo "No logs available"
+            docker ps -a | grep ${containerName} || echo "Container not found"
+        """
+        throw e
+    }
+}
