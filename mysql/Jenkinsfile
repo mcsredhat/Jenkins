@@ -12,20 +12,13 @@ pipeline {
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         APP_PORT = "3306"
         TEST_PORT = "3366"
-        // Define the application directory
         APP_DIR = "mysql"
-        
-        // ENABLE DEPLOYMENT STAGES - Set these to enable stages
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
         ENABLE_PRODUCTION_DEPLOY = 'true'
-        
-        // Override branch detection for testing
         FORCE_BRANCH_MAIN = 'true'
         FORCE_BRANCH_DEVELOP = 'false'
-        
-        // Email configuration
         EMAIL_CONFIGURED = 'false'
     }
 
@@ -39,23 +32,16 @@ pipeline {
                     echo "Current branch: ${env.BRANCH_NAME ?: 'main'}"
                     echo "Git commit: ${env.GIT_COMMIT ?: 'unknown'}"
                     echo "Repository URL: ${GITHUB_REPO}"
-                    
                     echo "Working in directory: ${pwd()}"
                     sh "ls -la"
-                    
-                    // Check Docker and Docker Compose availability
                     echo "🐳 Checking Docker environment..."
                     sh """
                         docker --version || echo "⚠️ Docker not found"
                         docker compose version 2>/dev/null && echo "✅ Docker Compose (plugin) available" || echo "⚠️ Docker Compose plugin not found"
                         docker-compose --version 2>/dev/null && echo "✅ Docker Compose (standalone) available" || echo "⚠️ Docker Compose standalone not found"
                     """
-                    
-                    // Check if the app directory exists
                     echo "Checking for application directory: ${APP_DIR}"
                     sh "ls -la ${APP_DIR}/ || echo 'Application directory not found'"
-                    
-                    // Check for required files in the app directory
                     echo "Checking for required files in ${APP_DIR}:"
                     sh """
                         cd ${APP_DIR}
@@ -71,15 +57,11 @@ pipeline {
                 echo "🔧 Setting up environment..."
                 script {
                     dir(APP_DIR) {
-                        // Create necessary directories for volumes
                         sh """
                             mkdir -p mysql_data mysql_logs
                             chmod 755 mysql_data mysql_logs
                         """
-                        
-                        // Clean up any existing containers - try different compose commands
                         sh """
-                            # Try docker compose (newer version) first, then docker-compose
                             docker compose down 2>/dev/null || docker-compose down 2>/dev/null || echo "No compose services to stop"
                             docker container prune -f || true
                         """
@@ -93,49 +75,51 @@ pipeline {
                 echo "🔧 Building Docker image..."
                 script {
                     try {
-                        // Change to the application directory for building
                         dir(APP_DIR) {
-                            // Check which compose command is available
                             def composeCmd = sh(
                                 script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
                                 returnStdout: true
                             ).trim()
-                            
                             echo "Using compose command: ${composeCmd}"
-                            
-                            // Try compose build first, fallback to manual build
                             def buildResult = sh(
-                                script: "${composeCmd} build 2>/dev/null || echo 'compose_failed'",
+                                script: "${composeCmd} build 2>&1 || echo 'compose_failed'",
                                 returnStdout: true
                             ).trim()
-                            
                             if (buildResult.contains('compose_failed')) {
                                 echo "⚠️ Docker Compose not available, building manually..."
                                 sh """
-                                    docker build -t ${IMAGE_NAME}:${BUILD_TAG} .
+                                    docker build -t ${IMAGE_NAME}:${BUILD_TAG} . 2>&1 | tee build.log
+                                    if [ \${PIPESTATUS[0]} -ne 0 ]; then
+                                        echo "Docker build failed, displaying build log:"
+                                        cat build.log
+                                        exit 1
+                                    fi
                                     docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:latest
                                 """
                             } else {
                                 echo "✅ Built with Docker Compose"
-                                // Tag the built image from compose
                                 sh """
-                                    # Get the image name that compose created
                                     COMPOSE_IMAGE=\$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep mysql | head -1)
                                     if [ ! -z "\$COMPOSE_IMAGE" ]; then
                                         docker tag \$COMPOSE_IMAGE ${IMAGE_NAME}:${BUILD_TAG}
                                         docker tag \$COMPOSE_IMAGE ${IMAGE_NAME}:latest
                                     else
                                         echo "No compose image found, building manually..."
-                                        docker build -t ${IMAGE_NAME}:${BUILD_TAG} .
+                                        docker build -t ${IMAGE_NAME}:${BUILD_TAG} . 2>&1 | tee build.log
+                                        if [ \${PIPESTATUS[0]} -ne 0 ]; then
+                                            echo "Docker build failed, displaying build log:"
+                                            cat build.log
+                                            exit 1
+                                        fi
                                         docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:latest
                                     fi
                                 """
                             }
-                            
                             echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         }
                     } catch (Exception e) {
                         echo "❌ Build failed: ${e.getMessage()}"
+                        sh "cat ${APP_DIR}/build.log || echo 'No build log available'"
                         throw e
                     }
                 }
@@ -148,31 +132,25 @@ pipeline {
                 script {
                     try {
                         dir(APP_DIR) {
-                            // Check if port is available
                             sh """
                                 docker ps -a --format '{{.Ports}}' | grep -q ":${TEST_PORT}->" && \
                                 (echo "Port ${TEST_PORT} already in use" && exit 1) || true
                             """
-                            
-                            // Verify image exists
                             sh """
                                 docker inspect ${IMAGE_NAME}:${BUILD_TAG} >/dev/null 2>&1 || \
                                 (echo "Image ${IMAGE_NAME}:${BUILD_TAG} not found" && exit 1)
                             """
-                            
-                            // Clean up any existing test container
                             sh """
                                 docker stop ${TEST_CONTAINER_NAME} || true
                                 docker rm ${TEST_CONTAINER_NAME} || true
                             """
-                            
-                            // Start container with healthcheck and log volume
                             sh """
                                 docker run -d --name ${TEST_CONTAINER_NAME} -p ${TEST_PORT}:3306 \
                                 -e MYSQL_ROOT_PASSWORD=rootpass \
                                 -e MYSQL_DATABASE=testdb \
                                 -e MYSQL_USER=testuser \
                                 -e MYSQL_PASSWORD=testpass \
+                                -v mysql_data:/var/lib/mysql \
                                 -v mysql_logs:/var/log/mysql \
                                 --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
                                 --health-interval=10s \
@@ -180,56 +158,38 @@ pipeline {
                                 --health-retries=5 \
                                 ${IMAGE_NAME}:${BUILD_TAG}
                             """
-                            
-                            // Wait for MySQL to be ready
                             echo "⌛ Waiting for MySQL to start..."
                             retry(15) {
                                 sleep(15)
                                 sh """
-                                    # Check if container is running
                                     if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
                                         echo "Container not running, checking logs:"
                                         docker logs ${TEST_CONTAINER_NAME}
                                         exit 1
                                     fi
-                                    
-                                    # Check container health
                                     HEALTH_STATUS=\$(docker inspect --format='{{.State.Health.Status}}' ${TEST_CONTAINER_NAME})
                                     if [ "\$HEALTH_STATUS" != "healthy" ]; then
                                         echo "Container not healthy, status: \$HEALTH_STATUS"
                                         docker logs ${TEST_CONTAINER_NAME}
                                         exit 1
                                     fi
-                                    
-                                    # Test connection using TCP
                                     docker exec ${TEST_CONTAINER_NAME} mysqladmin ping -h 127.0.0.1 -P 3306 -u root --password=rootpass --connect-timeout=5
                                 """
                             }
-                            
                             echo "✅ MySQL is ready!"
-                            
                             echo "🔍 Running MySQL tests..."
                             sh """
-                                # Test database connection
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "SHOW DATABASES;"
-                                
-                                # Test if our test database was created
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; SHOW TABLES;"
-                                
-                                # Test creating a table and inserting data
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; CREATE TABLE test_table (id INT PRIMARY KEY, name VARCHAR(50));"
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; INSERT INTO test_table (id, name) VALUES (1, 'test');"
                                 docker exec ${TEST_CONTAINER_NAME} mysql -uroot -prootpass -e "USE testdb; SELECT * FROM test_table;"
-                                
-                                # Test user permissions
                                 docker exec ${TEST_CONTAINER_NAME} mysql -utestuser -ptestpass -e "SHOW DATABASES;"
                             """
-                            
                             echo "✅ All MySQL tests passed!"
                         }
                     } catch (Exception e) {
                         echo "❌ Test failed: ${e.getMessage()}"
-                        // Show container logs for debugging
                         sh "docker logs ${TEST_CONTAINER_NAME} || echo 'Could not retrieve logs'"
                         throw e
                     } finally {
@@ -257,13 +217,11 @@ pipeline {
                             script: "docker run --rm aquasec/trivy:latest --version",
                             returnStatus: true
                         )
-                        
                         if (trivyAvailable != 0) {
                             echo "⚠️ Trivy not available, skipping security scan"
                             currentBuild.result = 'UNSTABLE'
                             return
                         }
-                        
                         echo "📊 Running comprehensive vulnerability scan..."
                         sh """
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -272,7 +230,6 @@ pipeline {
                             --severity LOW,MEDIUM,HIGH,CRITICAL \
                             ${IMAGE_NAME}:${BUILD_TAG} || true
                         """
-                        
                         echo "🚨 Checking for CRITICAL vulnerabilities only..."
                         def criticalScanResult = sh(
                             script: """
@@ -284,16 +241,13 @@ pipeline {
                             """,
                             returnStatus: true
                         )
-                        
                         if (criticalScanResult == 0) {
                             echo "✅ No CRITICAL vulnerabilities found"
                         } else {
                             echo "⚠️ CRITICAL vulnerabilities found - marking build as unstable"
                             currentBuild.result = 'UNSTABLE'
                         }
-                        
                         echo "✅ Security scan completed"
-                        
                     } catch (Exception e) {
                         echo "❌ Security scan failed: ${e.getMessage()}"
                         currentBuild.result = 'UNSTABLE'
@@ -321,7 +275,6 @@ pipeline {
                                 def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
                                 image.push()
                                 image.push("jenkins-mysql-latest")
-
                                 if (env.BRANCH_NAME == 'main' || env.FORCE_BRANCH_MAIN == 'true') {
                                     image.push("production")
                                     image.push("v1.0.0")
@@ -329,20 +282,16 @@ pipeline {
                                     image.push("staging")
                                     image.push("develop-latest")
                                 }
-                                
                                 echo "✅ Image pushed successfully with credentials"
                             }
                         } catch (Exception credError) {
                             echo "⚠️ Docker Hub credentials not found, attempting push without registry authentication..."
-                            
                             sh """
                                 docker push ${IMAGE_NAME}:${BUILD_TAG} || echo "Push failed - check Docker Hub login"
                                 docker push ${IMAGE_NAME}:jenkins-mysql-latest || echo "Push failed - check Docker Hub login"
                             """
-                            
                             echo "✅ Image push attempted (check Docker Hub for results)"
                         }
-                        
                     } catch (Exception e) {
                         echo "❌ Docker Hub push failed: ${e.getMessage()}"
                         echo "💡 To fix: Run 'docker login' on Jenkins agent or configure 'dockerhub-credentials'"
@@ -388,7 +337,6 @@ pipeline {
                             return
                         }
                     }
-                    
                     echo "🚀 Deploying to production..."
                     deployToEnvironment('production', '3308')
                 }
@@ -472,12 +420,10 @@ pipeline {
     }
 }
 
-// Helper function for deployment - Updated for MySQL
 def deployToEnvironment(environment, port) {
     def containerName = "mysql-app-${environment}"
     try {
         echo "🚀 Deploying ${IMAGE_NAME}:${BUILD_TAG} to ${environment} on port ${port}"
-        
         sh """
             docker stop ${containerName} || true
             docker rm ${containerName} || true
@@ -500,10 +446,8 @@ def deployToEnvironment(environment, port) {
                 -v mysql_logs_${environment}:/var/log/mysql \
                 ${IMAGE_NAME}:${BUILD_TAG}
         """
-
         echo "⌛ Waiting for MySQL deployment to stabilize..."
         sleep 30
-
         echo "🔍 Checking MySQL deployment health..."
         retry(5) {
             sh """
@@ -511,14 +455,10 @@ def deployToEnvironment(environment, port) {
                 docker exec ${containerName} mysqladmin ping -h localhost -u root --password=rootpass || exit 1
             """
         }
-
         echo "✅ Successfully deployed MySQL to ${environment} on port ${port}"
         echo "🔌 Connect to MySQL at: localhost:${port}"
         echo "📊 Connection command: mysql -h127.0.0.1 -P${port} -uroot -prootpass"
-        
-        // Show running containers
         sh "docker ps | grep ${containerName} || echo 'Container not found in ps'"
-        
     } catch (Exception e) {
         echo "❌ Deployment to ${environment} failed: ${e.getMessage()}"
         echo "🔍 Checking what went wrong..."
