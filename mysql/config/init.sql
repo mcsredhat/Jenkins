@@ -1,12 +1,14 @@
 -- MySQL Initialization Script
 -- This script runs automatically when the container starts for the first time
 
--- Use the appropriate database (testdb for testing, mydb for deployment)
+-- Select the appropriate database (testdb for testing, mydb for deployment)
 SET @db_name = IF(EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'testdb'), 'testdb', 'mydb');
-SET @sql = CONCAT('USE `', @db_name, '`;');
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+SET @sql = CONCAT('CREATE DATABASE IF NOT EXISTS `', @db_name, '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+SET @use_sql = CONCAT('USE `', @db_name, '`;');
+
+-- Execute database creation and selection
+CALL mysql.execute(@sql);
+CALL mysql.execute(@use_sql);
 
 -- Create sample tables
 CREATE TABLE IF NOT EXISTS `users` (
