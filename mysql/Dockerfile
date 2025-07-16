@@ -47,6 +47,10 @@ LABEL version=${SQLVER}
 WORKDIR ${APP_DIR}
 
 # Create necessary directories, user, group and set permissions
+RUN apt-get update && apt-get install -y tzdata && \
+    rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /var/log/mysql && \
+    chown mysql:mysql /var/log/mysql
 RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     useradd -u ${USER_ID} -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME} && \
     mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} /etc/mysql/conf.d && \
@@ -54,8 +58,8 @@ RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2}
 
 # Copy MySQL configuration files
-COPY ./config/my.cnf /etc/mysql/conf.d/custom.cnf
-COPY ./config/init.sql /docker-entrypoint-initdb.d/
+COPY config/my.cnf /etc/mysql/conf.d/custom.cnf
+COPY config/init.sql /docker-entrypoint-initdb.d/
 
 # Set proper permissions for config files
 RUN chown ${USER_NAME}:${GROUP_NAME} /etc/mysql/conf.d/custom.cnf && \
