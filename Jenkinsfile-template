@@ -11,8 +11,8 @@ pipeline {
         CONTAINER_NAME = "${env.APP_TYPE}-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-${env.APP_TYPE}-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins' // Configurable GitHub repo
-        APP_PORT = "${env.APP_PORT ?: '8080'}"             // Default port, override per app
-        TEST_PORT = "${env.TEST_PORT ?: '9090'}"           // Default test port, override per app
+        APP_PORT = "${env.APP_PORT ?: '8383'}"             // Default port, override per app
+        TEST_PORT = "${env.TEST_PORT ?: '9393'}"           // Default test port, override per app
         APP_DIR = "${env.APP_DIR ?: '.'}"                  // Default to root, override per app
         COMPOSE_FILE = "${env.COMPOSE_FILE ?: 'docker-compose.yml'}" // Default compose file
         USE_COMPOSE = "${env.USE_COMPOSE ?: 'false'}"      // Flag to use docker-compose
@@ -49,7 +49,7 @@ pipeline {
                     echo "Checking for required files in ${APP_DIR}:"
                     sh """
                         cd ${APP_DIR}
-                        ls -la Dockerfile ${COMPOSE_FILE} || echo 'Dockerfile or ${COMPOSE_FILE} not found'
+                        ls -la Dockerfile ${COMPOSE_FILE} Jenkinsfile || echo 'Dockerfile or ${COMPOSE_FILE} Jenkinsfile not found'
                     """
                 }
             }
@@ -65,13 +65,13 @@ pipeline {
                                 // Build using docker-compose
                                 sh """
                                     docker-compose -f ${COMPOSE_FILE} build
-                                    docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:jenkins-latest
+                                    docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:jenkins-build 
                                 """
                                 echo "✅ Docker-compose build completed"
                             } else {
                                 // Build using Dockerfile
                                 def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
-                                image.tag("jenkins-latest")
+                                image.tag("jenkins-build")
                                 echo "✅ Dockerfile build completed: ${IMAGE_NAME}:${BUILD_TAG}"
                             }
                         }
