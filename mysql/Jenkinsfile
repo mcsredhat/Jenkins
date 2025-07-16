@@ -43,6 +43,14 @@ pipeline {
                     echo "Working in directory: ${pwd()}"
                     sh "ls -la"
                     
+                    // Check Docker and Docker Compose availability
+                    echo "🐳 Checking Docker environment..."
+                    sh """
+                        docker --version || echo "⚠️ Docker not found"
+                        docker compose version 2>/dev/null && echo "✅ Docker Compose (plugin) available" || echo "⚠️ Docker Compose plugin not found"
+                        docker-compose --version 2>/dev/null && echo "✅ Docker Compose (standalone) available" || echo "⚠️ Docker Compose standalone not found"
+                    """
+                    
                     // Check if the app directory exists
                     echo "Checking for application directory: ${APP_DIR}"
                     sh "ls -la ${APP_DIR}/ || echo 'Application directory not found'"
@@ -69,9 +77,10 @@ pipeline {
                             chmod 755 mysql_data mysql_logs
                         """
                         
-                        // Clean up any existing containers
+                        // Clean up any existing containers - try different compose commands
                         sh """
-                            docker-compose down || true
+                            # Try docker compose (newer version) first, then docker-compose
+                            docker compose down 2>/dev/null || docker-compose down 2>/dev/null || echo "No compose services to stop"
                             docker container prune -f || true
                         """
                     }
@@ -81,19 +90,47 @@ pipeline {
 
         stage('Build') {
             steps {
-                echo "🔧 Building Docker image with Docker Compose..."
+                echo "🔧 Building Docker image..."
                 script {
                     try {
                         // Change to the application directory for building
                         dir(APP_DIR) {
-                            // Build using docker-compose
-                            sh "docker-compose build"
+                            // Check which compose command is available
+                            def composeCmd = sh(
+                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+                                returnStdout: true
+                            ).trim()
                             
-                            // Tag the built image
-                            sh """
-                                docker tag ${APP_DIR}_mysql-db:latest ${IMAGE_NAME}:${BUILD_TAG}
-                                docker tag ${APP_DIR}_mysql-db:latest ${IMAGE_NAME}:latest
-                            """
+                            echo "Using compose command: ${composeCmd}"
+                            
+                            // Try compose build first, fallback to manual build
+                            def buildResult = sh(
+                                script: "${composeCmd} build 2>/dev/null || echo 'compose_failed'",
+                                returnStdout: true
+                            ).trim()
+                            
+                            if (buildResult.contains('compose_failed')) {
+                                echo "⚠️ Docker Compose not available, building manually..."
+                                sh """
+                                    docker build -t ${IMAGE_NAME}:${BUILD_TAG} .
+                                    docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:latest
+                                """
+                            } else {
+                                echo "✅ Built with Docker Compose"
+                                // Tag the built image from compose
+                                sh """
+                                    # Get the image name that compose created
+                                    COMPOSE_IMAGE=\$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep mysql | head -1)
+                                    if [ ! -z "\$COMPOSE_IMAGE" ]; then
+                                        docker tag \$COMPOSE_IMAGE ${IMAGE_NAME}:${BUILD_TAG}
+                                        docker tag \$COMPOSE_IMAGE ${IMAGE_NAME}:latest
+                                    else
+                                        echo "No compose image found, building manually..."
+                                        docker build -t ${IMAGE_NAME}:${BUILD_TAG} .
+                                        docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:latest
+                                    fi
+                                """
+                            }
                             
                             echo "✅ Image built successfully: ${IMAGE_NAME}:${BUILD_TAG}"
                         }
