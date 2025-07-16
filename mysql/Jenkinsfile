@@ -155,12 +155,12 @@ pipeline {
                                 --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
                                 --health-interval=10s \
                                 --health-timeout=10s \
-                                --health-retries=10 \
-                                --health-start-period=30s \
+                                --health-retries=15 \
+                                --health-start-period=60s \
                                 ${IMAGE_NAME}:${BUILD_TAG}
                             """
                             echo "⌛ Waiting for MySQL to start..."
-                            retry(20) {
+                            retry(25) {
                                 sleep(10)
                                 sh """
                                     if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
@@ -428,46 +428,4 @@ def deployToEnvironment(environment, port) {
         sh """
             docker stop ${containerName} || true
             docker rm ${containerName} || true
-            docker run -d \
-                --name ${containerName} \
-                -p ${port}:${APP_PORT} \
-                -e MYSQL_ROOT_PASSWORD=rootpass \
-                -e MYSQL_DATABASE=mydb \
-                -e MYSQL_USER=sqluser \
-                -e MYSQL_PASSWORD=MyAppUserPass456 \
-                -e ENVIRONMENT=${environment} \
-                --restart=unless-stopped \
-                --memory=512m \
-                --cpus=0.5 \
-                --health-cmd="mysqladmin ping -h localhost -u root --password=rootpass || exit 1" \
-                --health-interval=30s \
-                --health-timeout=10s \
-                --health-retries=10 \
-                --health-start-period=30s \
-                -v mysql_data_${environment}:/var/lib/mysql \
-                -v mysql_logs_${environment}:/var/log/mysql \
-                ${IMAGE_NAME}:${BUILD_TAG}
-        """
-        echo "⌛ Waiting for MySQL deployment to stabilize..."
-        sleep 30
-        echo "🔍 Checking MySQL deployment health..."
-        retry(5) {
-            sh """
-                echo "Testing MySQL connection..."
-                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=rootpass || exit 1
-            """
-        }
-        echo "✅ Successfully deployed MySQL to ${environment} on port ${port}"
-        echo "🔌 Connect to MySQL at: localhost:${port}"
-        echo "📊 Connection command: mysql -h127.0.0.1 -P${port} -uroot -prootpass"
-        sh "docker ps | grep ${containerName} || echo 'Container not found in ps'"
-    } catch (Exception e) {
-        echo "❌ Deployment to ${environment} failed: ${e.getMessage()}"
-        echo "🔍 Checking what went wrong..."
-        sh """
-            docker logs ${containerName} || echo "No logs available"
-            docker ps -a | grep ${containerName} || echo "Container not found"
-        """
-        throw e
-    }
-}
+            docker run -
