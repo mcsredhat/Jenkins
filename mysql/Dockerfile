@@ -1,5 +1,5 @@
 # Base image
-FROM mysql:8.0
+FROM mysql:8.0.42
 
 # Build-time variables
 ARG SQLVER=8.0
@@ -50,6 +50,7 @@ WORKDIR ${APP_DIR}
 RUN microdnf update && \
     microdnf install -y tzdata && \
     microdnf clean all && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     mkdir -p /var/log/mysql && \
     chown mysql:mysql /var/log/mysql
 
@@ -82,10 +83,10 @@ USER ${USER_NAME}
 STOPSIGNAL SIGTERM
 
 # Healthcheck
-HEALTHCHECK --interval=30s \
-    --timeout=15s \
-    --start-period=30s \
-    --retries=3 \
+HEALTHCHECK --interval=10s \
+    --timeout=10s \
+    --start-period=60s \
+    --retries=10 \
     CMD mysqladmin ping -h localhost -u root --password="$MYSQL_ROOT_PASSWORD" || exit 1
 
 # Expose port
