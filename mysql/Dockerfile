@@ -1,4 +1,4 @@
-# Base image - corrected to use official MySQL image
+# Base image
 FROM mysql:8.0
 
 # Build-time variables
@@ -10,12 +10,12 @@ ARG GROUP_NAME=sqlgroup
 ARG APP_PORT=3306
 ARG APP_ENV=production
 ARG BASH_SHELL=/bin/bash
-ARG APP_DIR=/sqldb
-ARG MOUNT1=/sqldb/data
-ARG MOUNT2=/sqldb/logs
+ARG APP_DIR=/var/lib/mysql
+ARG MOUNT1=/var/lib/mysql
+ARG MOUNT2=/var/log/mysql
 ARG MYSQL_ROOT_PASSWORD=rootpass
-ARG MYSQL_DATABASE=wordpress
-ARG MYSQL_PASSWORD=wppassword
+ARG MYSQL_DATABASE=mydb
+ARG MYSQL_PASSWORD=MyAppUserPass456
 ARG MYSQL_USER=sqluser
 
 # Set runtime environment variables from ARGs
@@ -46,15 +46,17 @@ LABEL version=${SQLVER}
 # Set working directory
 WORKDIR ${APP_DIR}
 
-# Create necessary directories, user, group and set permissions
-RUN apt-get update && apt-get install -y tzdata && \
-    rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /var/log/mysql && \
+# Install time zone data and create log directory
+RUN microdnf update && \
+    microdnf install -y tzdata && \
+    microdnf clean all && \
+    mkdir -p /var/log/mysql && \
     chown mysql:mysql /var/log/mysql
-RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
-    useradd -u ${USER_ID} -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME} && \
-    mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} /etc/mysql/conf.d && \
-    chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} && \
+
+# Create user and group (optional, as MySQL image already has mysql user)
+RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} || true && \
+    useradd -u ${USER_ID} -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME} || true && \
+    chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} || true && \
     chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2}
 
 # Copy MySQL configuration files
@@ -76,7 +78,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Switch to non-root user
 USER ${USER_NAME}
 
-# STOPSIGNAL (docker stop --signal=SIGTERM "container_id")
+# STOPSIGNAL
 STOPSIGNAL SIGTERM
 
 # Healthcheck
@@ -89,5 +91,5 @@ HEALTHCHECK --interval=30s \
 # Expose port
 EXPOSE ${APP_PORT}
 
-# Default command - use the official MySQL entrypoint
+# Default command
 CMD ["mysqld"]
