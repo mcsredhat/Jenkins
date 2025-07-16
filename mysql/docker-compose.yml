@@ -1,0 +1,135 @@
+version: "3.8"  # Updated to more recent version with better features
+
+services:
+  mysql-db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SQLVER: 8.0
+        USER_ID: 1010
+        USER_NAME: sqluser
+        GROUP_ID: 1010
+        GROUP_NAME: sqlgroup
+        APP_PORT: 3306
+        APP_ENV: production
+        BASH_SHELL: /bin/bash
+        APP_DIR: /sqldb
+        MOUNT1: /sqldb/data
+        MOUNT2: /sqldb/logs
+        MYSQL_ROOT_PASSWORD: rootpass
+        MYSQL_DATABASE: mydb
+        MYSQL_PASSWORD: MyAppUserPass456
+        MYSQL_USER: sqluser
+    container_name: mysql-project
+    hostname: mysql-host
+    labels:
+      - "maintainer=farajassulai"
+      - "app=mysql-database"
+      - "service=database"
+    environment:
+      # MySQL specific environment variables
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: sqluser
+      MYSQL_PASSWORD: MyAppUserPass456
+      # Custom environment variables
+      SQLVER: 8.0
+      USER_ID: "1010"
+      USER_NAME: sqluser
+      GROUP_ID: "1010"
+      GROUP_NAME: sqlgroup
+      APP_PORT: "3306"
+      APP_ENV: production
+      BASH_SHELL: /bin/bash
+      APP_DIR: /sqldb
+      MOUNT1: /sqldb/data
+      MOUNT2: /sqldb/logs
+      TZ: Europe/Paris  # Fixed timezone format
+    networks:
+      - mysql-network
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    ports:
+      - "3306:3306"
+    volumes:
+      # Named volumes for persistence (recommended for databases)
+      - mysql_data:/sqldb/data
+      - mysql_logs:/sqldb/logs
+      # Optional: mount custom config if you have additional configurations
+      # - ./config/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    # Removed tmpfs as they're not needed for MySQL
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: '0.5'
+        reservations:
+          memory: 512m
+          cpus: '0.25'
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 65536
+      nproc:
+        soft: 1024
+        hard: 4096
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -u root --password=\"$$MYSQL_ROOT_PASSWORD\" || exit 1"
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s  # Increased for MySQL initialization
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+        compress: "true"
+    security_opt:
+      - "no-new-privileges:true"
+    # MySQL requires more capabilities than nginx
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
+      - SYS_RESOURCE  # Required for MySQL memory management
+    # Note: MySQL needs write access to data directories, so read_only is removed
+    # Run as the custom user we created
+    user: "1010:1010"
+    restart: unless-stopped
+    working_dir: /sqldb
+
+# Define named volumes for data persistence
+volumes:
+  mysql_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./mysql_data
+  mysql_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./mysql_logs
+
+# Network configuration
+networks:
+  mysql-network:  # Fixed network name to match service reference
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.19.0/24
