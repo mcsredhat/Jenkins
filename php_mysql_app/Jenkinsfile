@@ -94,7 +94,11 @@ pipeline {
                 echo "⚙️ Initializing pipeline configuration..."
                 script {
                     // Validate required environment variables
-                    def requiredVars = ['DOCKER_USERNAME', 'APP_TYPE', 'APP_DIR', 'MYSQL_ROOT_PASSWORD', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD']
+                    def requiredVars = [
+                        'DOCKER_USERNAME', 'APP_TYPE', 'APP_DIR',
+                        'MYSQL_ROOT_PASSWORD', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD',
+                        'SONAR_HOST_URL', 'SONAR_AUTH_TOKEN', 'SLACK_WEBHOOK_URL', 'GITHUB_TOKEN'
+                    ]
                     requiredVars.each { var ->
                         if (!env[var]) {
                             error "❌ Required environment variable ${var} is not set"
@@ -117,7 +121,7 @@ pipeline {
                         if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic', 'php'].contains(config.appType)) {
                             error "❌ Invalid appType '${config.appType}' in ${CONFIG_FILE}"
                         }
-                        if (!['rolling', 'blue-green', 'canary'].contains(env.DEPLOYMENT_STRATEGY)) {
+                        if (!['rolling', 'blue-green'].contains(env.DEPLOYMENT_STRATEGY)) {
                             error "❌ Invalid deployment strategy '${env.DEPLOYMENT_STRATEGY}'"
                         }
                     }
@@ -133,6 +137,13 @@ pipeline {
                         echo "⚠️ Both Dockerfile and ${COMPOSE_FILE} found. Using USE_COMPOSE=${USE_COMPOSE}."
                     } else {
                         error "❌ Neither Dockerfile nor ${COMPOSE_FILE} found in ${APP_DIR}"
+                    }
+
+                    // Validate required Dockerfiles for Compose
+                    if (env.USE_COMPOSE == 'true') {
+                        if (!fileExists("${APP_DIR}/php-apache/Dockerfile") || !fileExists("${APP_DIR}/mysql/Dockerfile")) {
+                            error "❌ Required Dockerfiles (php-apache/Dockerfile, mysql/Dockerfile) not found"
+                        }
                     }
 
                     echo "Configuration: APP_TYPE=${APP_TYPE}, USE_COMPOSE=${USE_COMPOSE}, APP_DIR=${APP_DIR}, DEPLOYMENT_STRATEGY=${DEPLOYMENT_STRATEGY}, APP_PORT=${APP_PORT}, TEST_PORT=${TEST_PORT}"
@@ -369,7 +380,7 @@ pipeline {
                     )
                 }
             }
-            post { always { archiveArtifacts artifacts: 'image-layers.txt,sbom.json', allowEmptyArchive: true } }
+            post { always { archiveArtifacts artifacts: 'image-layers.txt,sbom*.json', allowEmptyArchive: true } }
         }
 
         stage('Docker Best Practices Validation') {
@@ -435,6 +446,9 @@ pipeline {
                     steps {
                         echo "🔗 Running integration tests..."
                         script {
+                            if (env.APP_TYPE == 'php' && !fileExists("${APP_DIR}/tests/run-tests.php")) {
+                                error "❌ PHP integration test file tests/run-tests.php not found"
+                            }
                             dockerPipeline.runIntegrationTests(
                                 useCompose: env.USE_COMPOSE == 'true',
                                 composeFile: "${APP_DIR}/${COMPOSE_FILE}",
@@ -498,6 +512,7 @@ pipeline {
                                 docker logs perf-${TEST_CONTAINER_NAME} > performance-test-logs.txt || true
                                 docker stop perf-${TEST_CONTAINER_NAME} || true
                                 docker rm perf-${TEST_CONTAINER_NAME} || true
+                                docker network rm web-app-net || true
                                 docker rmi ${IMAGE_NAME}:${BUILD_TAG} || true
                             """
                             archiveArtifacts artifacts: 'performance-*.tsv,performance-test-logs.txt', allowEmptyArchive: true
@@ -565,10 +580,11 @@ pipeline {
             steps {
                 echo "🚀 Deploying to staging..."
                 script {
+                    def config = readYaml file: "${APP_DIR}/pipeline-config.yml"
                     dockerPipeline.deploy(
                         environment: 'staging',
                         serviceName: "${env.APP_TYPE}-app-staging",
-                        port: env.STAGING_PORT ?: '8989',
+                        port: env.STAGING_PORT ?: config.deployment.environments.staging.services[env.APP_TYPE].port.toString(),
                         imageName: IMAGE_NAME,
                         buildTag: BUILD_TAG,
                         appType: APP_TYPE,
@@ -603,10 +619,11 @@ pipeline {
                         input message: "Deploy ${APP_TYPE} ${BUILD_TAG} to production?", ok: 'Deploy'
                     }
                     echo "🚀 Deploying to production with ${DEPLOYMENT_STRATEGY} strategy..."
+                    def config = readYaml file: "${APP_DIR}/pipeline-config.yml"
                     dockerPipeline.deploy(
                         environment: 'production',
                         serviceName: "${env.APP_TYPE}-app-production",
-                        port: env.PRODUCTION_PORT ?: '8989',
+                        port: env.PRODUCTION_PORT ?: config.deployment.environments.production.services[env.APP_TYPE].port.toString(),
                         imageName: IMAGE_NAME,
                         buildTag: BUILD_TAG,
                         appType: APP_TYPE,
@@ -655,6 +672,15 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
                     writeFile file: 'README.md', text: readmeContent
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            sh """
+                docker network rm web-app-net || true
+                docker rmi ${IMAGE_NAME}:${BUILD_TAG} || true
+            """
         }
     }
 }
