@@ -5,7 +5,7 @@ appName: php_mysql_app
 appDir: .
 composeFile: docker-compose.yml
 useCompose: true
-deploymentStrategy: rolling  # Must be one of: rolling, blue-green
+deploymentStrategy: canary  # Must be one of: rolling, blue-green, canary
 
 # Service-specific Ports
 services:
@@ -171,6 +171,9 @@ deployment:
       maxUnavailable: 1
       maxSurge: 1
     bluegreen:
+      testTrafficPercent: 10
+      promotionTimeout: 300
+    canary:
       testTrafficPercent: 10
       promotionTimeout: 300
 
