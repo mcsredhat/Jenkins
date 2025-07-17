@@ -8,6 +8,7 @@ pipeline {
         CONFIG_FILE = "${env.APP_DIR ?: '.'}/pipeline-config.yml"
         DOCKER_REGISTRY = "${env.DOCKER_REGISTRY ?: 'https://index.docker.io/v1/'}"
         DOCKER_USERNAME = "${env.DOCKER_USERNAME ?: 'farajassulai'}"
+        DOCKER_CREDENTIALS_ID = "${env.DOCKER_CREDENTIALS_ID ?: 'dockerhub-credentials'}"
         DOCKER_REPO = "${env.APP_TYPE}-app"
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
@@ -93,7 +94,7 @@ pipeline {
                 echo "⚙️ Initializing pipeline configuration..."
                 script {
                     // Validate required environment variables
-                    def requiredVars = ['DOCKER_USERNAME', 'APP_TYPE', 'APP_DIR']
+                    def requiredVars = ['DOCKER_USERNAME', 'APP_TYPE', 'APP_DIR', 'MYSQL_ROOT_PASSWORD', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD']
                     requiredVars.each { var ->
                         if (!env[var]) {
                             error "❌ Required environment variable ${var} is not set"
@@ -110,10 +111,14 @@ pipeline {
                         env.COMPOSE_FILE = config.composeFile ?: env.COMPOSE_FILE
                         env.USE_COMPOSE = config.useCompose ?: env.USE_COMPOSE
                         env.DEPLOYMENT_STRATEGY = config.deploymentStrategy ?: env.DEPLOYMENT_STRATEGY
+                        env.ENABLE_DOCKER_CACHE = config.build.cache.enabled ? 'true' : 'false'
 
                         // Validate configuration
                         if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic', 'php'].contains(config.appType)) {
                             error "❌ Invalid appType '${config.appType}' in ${CONFIG_FILE}"
+                        }
+                        if (!['rolling', 'blue-green', 'canary'].contains(env.DEPLOYMENT_STRATEGY)) {
+                            error "❌ Invalid deployment strategy '${env.DEPLOYMENT_STRATEGY}'"
                         }
                     }
 
@@ -219,6 +224,7 @@ pipeline {
                             composer install --no-interaction --optimize-autoloader --no-dev
                         fi
                         mkdir -p .build-cache
+                        mkdir -p ./volumes/{php_data,php_logs,mysql_data,mysql_logs}
                     """
                     writeFile file: 'build-metadata.json', text: """{
                         "buildNumber": "${env.BUILD_NUMBER}",
@@ -492,6 +498,7 @@ pipeline {
                                 docker logs perf-${TEST_CONTAINER_NAME} > performance-test-logs.txt || true
                                 docker stop perf-${TEST_CONTAINER_NAME} || true
                                 docker rm perf-${TEST_CONTAINER_NAME} || true
+                                docker rmi ${IMAGE_NAME}:${BUILD_TAG} || true
                             """
                             archiveArtifacts artifacts: 'performance-*.tsv,performance-test-logs.txt', allowEmptyArchive: true
                         }
@@ -537,7 +544,7 @@ pipeline {
                         imageName: IMAGE_NAME,
                         buildTag: BUILD_TAG,
                         dockerRegistry: DOCKER_REGISTRY,
-                        credentialsId: 'dockerhub-credentials',
+                        credentialsId: DOCKER_CREDENTIALS_ID,
                         branchName: env.BRANCH_NAME
                     )
                 }
@@ -561,7 +568,7 @@ pipeline {
                     dockerPipeline.deploy(
                         environment: 'staging',
                         serviceName: "${env.APP_TYPE}-app-staging",
-                        port: env.STAGING_PORT ?: '8088',
+                        port: env.STAGING_PORT ?: '8989',
                         imageName: IMAGE_NAME,
                         buildTag: BUILD_TAG,
                         appType: APP_TYPE,
@@ -599,7 +606,7 @@ pipeline {
                     dockerPipeline.deploy(
                         environment: 'production',
                         serviceName: "${env.APP_TYPE}-app-production",
-                        port: env.PRODUCTION_PORT ?: '9090',
+                        port: env.PRODUCTION_PORT ?: '8989',
                         imageName: IMAGE_NAME,
                         buildTag: BUILD_TAG,
                         appType: APP_TYPE,
@@ -631,7 +638,7 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
 ## Prerequisites
 - **Jenkins Plugins**: Pipeline, GitHub, Docker, Slack Notification, Cobertura
 - **Tools**: Docker, docker-compose, trivy, truffleHog3, sonar-scanner (optional), semgrep (optional), cosign (optional)
-- **Credentials**: 'dockerhub-credentials' in Jenkins for Docker Hub access
+- **Credentials**: '${env.DOCKER_CREDENTIALS_ID}' in Jenkins for Docker Hub access
 - **Configuration**: Create a `pipeline-config.yml` in the project root:
   ```yaml
   appType: ${env.APP_TYPE}
@@ -643,3 +650,11 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
   composeFile: ${env.COMPOSE_FILE}
   useCompose: ${env.USE_COMPOSE}
   deploymentStrategy: ${env.DEPLOYMENT_STRATEGY}
+  ```
+                    """
+                    writeFile file: 'README.md', text: readmeContent
+                }
+            }
+        }
+    }
+}
