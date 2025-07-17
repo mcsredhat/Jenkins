@@ -101,8 +101,8 @@ deployment:
           port: 8989
           replicas: 2
           resources:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1g"
+            cpu: "0.5"
           healthcheck:
             path: "/health"
             timeout: 30
@@ -111,10 +111,20 @@ deployment:
           port: 3306
           replicas: 1
           resources:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1g"
+            cpu: "0.5"
           healthcheck:
             path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            timeout: 30
+            interval: 10
+        adminer:
+          port: 8181
+          replicas: 1
+          resources:
+            memory: "512m"
+            cpu: "0.25"
+          healthcheck:
+            path: "curl -f http://localhost:8080 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: false
@@ -125,8 +135,8 @@ deployment:
           port: 8989
           replicas: 3
           resources:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1g"
+            cpu: "0.5"
           healthcheck:
             path: "/health"
             timeout: 30
@@ -135,10 +145,20 @@ deployment:
           port: 3306
           replicas: 1
           resources:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1g"
+            cpu: "0.5"
           healthcheck:
             path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            timeout: 30
+            interval: 10
+        adminer:
+          port: 8181
+          replicas: 1
+          resources:
+            memory: "512m"
+            cpu: "0.25"
+          healthcheck:
+            path: "curl -f http://localhost:8080 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: true
@@ -199,11 +219,11 @@ notifications:
 # Resource Management
 resources:
   limits:
-    memory: "1Gi"
-    cpu: "500m"
+    memory: "1g"
+    cpu: "0.5"
   requests:
-    memory: "512Mi"
-    cpu: "250m"
+    memory: "512m"
+    cpu: "0.25"
   docker:
     memory: "1g"
     cpu: "0.5"

@@ -18,8 +18,6 @@ pipeline {
 
         // Application Configuration
         GITHUB_REPO = "${env.GITHUB_REPO ?: 'https://github.com/mcsredhat/Jenkins'}"
-        APP_PORT = "${env.APP_PORT ?: '8989'}"
-        TEST_PORT = "${env.TEST_PORT ?: '8383'}"
         APP_DIR = "${env.APP_DIR ?: '.'}"
         COMPOSE_FILE = "${env.COMPOSE_FILE ?: 'docker-compose.yml'}"
         USE_COMPOSE = "${env.USE_COMPOSE ?: 'true'}"
@@ -106,8 +104,8 @@ pipeline {
                     if (fileExists(CONFIG_FILE)) {
                         def config = readYaml file: CONFIG_FILE
                         env.APP_TYPE = config.appType ?: env.APP_TYPE
-                        env.APP_PORT = config.services?.php?.appPort ?: env.APP_PORT
-                        env.TEST_PORT = config.services?.php?.testPort ?: env.TEST_PORT
+                        env.APP_PORT = config.services[env.APP_TYPE]?.appPort ?: env.APP_PORT
+                        env.TEST_PORT = config.services[env.APP_TYPE]?.testPort ?: env.TEST_PORT
                         env.APP_DIR = config.appDir ?: env.APP_DIR
                         env.COMPOSE_FILE = config.composeFile ?: env.COMPOSE_FILE
                         env.USE_COMPOSE = config.useCompose ?: env.USE_COMPOSE
@@ -132,7 +130,7 @@ pipeline {
                         error "❌ Neither Dockerfile nor ${COMPOSE_FILE} found in ${APP_DIR}"
                     }
 
-                    echo "Configuration: APP_TYPE=${APP_TYPE}, USE_COMPOSE=${USE_COMPOSE}, APP_DIR=${APP_DIR}, DEPLOYMENT_STRATEGY=${DEPLOYMENT_STRATEGY}"
+                    echo "Configuration: APP_TYPE=${APP_TYPE}, USE_COMPOSE=${USE_COMPOSE}, APP_DIR=${APP_DIR}, DEPLOYMENT_STRATEGY=${DEPLOYMENT_STRATEGY}, APP_PORT=${APP_PORT}, TEST_PORT=${TEST_PORT}"
                 }
             }
         }
@@ -177,7 +175,7 @@ pipeline {
                 script {
                     def tools = [
                         'docker': [cmd: 'docker --version', required: true],
-                        'trivy': [cmd: 'trivy --version', required: env.ENABLE_SECRETS_SCAN == 'true' || env.SKIP_SECURITY_SCAN != 'true']
+                        'trivy': [cmd: 'trivy --version', required: env.ENABLE_SECRETS_SCAN == 'true' || env.SKIP_SECURITY_SCAN != 'true'],
                         'truffleHog': [cmd: 'truffleHog3 --version || pip install truffleHog3', required: env.ENABLE_SECRETS_SCAN == 'true'],
                         'sonar-scanner': [cmd: 'sonar-scanner --version || echo "SonarQube not installed"', required: env.ENABLE_SAST_SCAN == 'true'],
                         'semgrep': [cmd: 'semgrep --version || echo "Semgrep not installed"', required: env.ENABLE_SAST_SCAN == 'true'],
@@ -244,7 +242,7 @@ pipeline {
                         script {
                             try {
                                 sh """
-                                    truffleHog3 --no-history --format json ${APP_DIR} > secrets-report.json || echo "Secrets scan completed"
+                                    truffleHog3 --no-history --format json ${APP_DIR} .env > secrets-report.json || echo "Secrets scan completed"
                                     if [ -f secrets-report.json ]; then
                                         HIGH_CONFIDENCE=\$(jq '[.[] | select(.confidence == "high")] | length' secrets-report.json)
                                         if [ "\$HIGH_CONFIDENCE" -gt 0 ]; then
@@ -645,72 +643,3 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
   composeFile: ${env.COMPOSE_FILE}
   useCompose: ${env.USE_COMPOSE}
   deploymentStrategy: ${env.DEPLOYMENT_STRATEGY}
-  ```
-
-## Stages
-1. **Initialize Configuration**: Loads `pipeline-config.yml` and validates Dockerfile or Docker Compose presence.
-2. **Docker Daemon Validation**: Verifies Docker daemon, BuildKit, and network configuration.
-3. **Tool Validation**: Checks for required tools (e.g., Docker, trivy).
-4. **Checkout & Setup**: Clones repository and installs dependencies based on app type.
-5. **Pre-Build Analysis**: Runs secrets scanning, SAST, and dependency checks (skipped for MySQL).
-6. **Docker Cache Optimization**: Manages Docker cache for efficient builds.
-7. **Advanced Docker Build**: Builds images with BuildKit, supports multi-arch and caching.
-8. **Docker Best Practices Validation**: Ensures Dockerfile follows best practices.
-9. **Comprehensive Testing**: Runs unit, integration, and performance tests (skipped for MySQL where applicable).
-10. **Docker Security Hardening**: Scans images for vulnerabilities with Trivy.
-11. **Push to Registry**: Pushes images to Docker Hub with appropriate tags.
-12. **Deploy to Staging**: Deploys to staging environment (develop branch).
-13. **Deploy to Production**: Deploys to production with manual approval (main branch).
-
-## Configuration Variables
-- `APP_TYPE`: Application type (node, python, java, go, mysql, php, generic)
-- `USE_COMPOSE`: Use Docker Compose (true/false)
-- `ENABLE_DOCKER_SWARM`: Enable Docker Swarm deployment (true/false)
-- `DEPLOYMENT_STRATEGY`: Deployment strategy (rolling, blue-green, canary)
-- `ENABLE_SECRETS_SCAN`, `ENABLE_SAST_SCAN`, `ENABLE_DEPENDENCY_SCAN`: Enable/disable scans
-- `MAX_CRITICAL_VULNERABILITIES`: Maximum allowed critical vulnerabilities
-- `PROMETHEUS_GATEWAY`: Prometheus push gateway URL
-
-## Artifacts
-- `build-metadata.json`: Build metadata
-- `secrets-report.json`, `sast-report.json`, `dependency-audit.json`: Security scan results
-- `image-layers.txt`, `sbom.json`, `image-vulnerabilities.json`: Docker build artifacts
-- `docker-stats.txt`, `image-sizes.txt`: Monitoring metrics
-
-## Monitoring
-- Metrics are sent to Prometheus if `ENABLE_METRICS` is true.
-- Tracing with Jaeger is supported if `ENABLE_TRACING` is true.
-
-## Troubleshooting
-- Check Jenkins logs for stage-specific errors.
-- Ensure `dockerhub-credentials` is configured in Jenkins.
-- Verify Docker daemon is running and accessible.
-- Review `pipeline-config.yml` for correct settings.
-
-## Customization
-- Add custom test scripts in `scripts/` directory (e.g., `integration-tests.sh`).
-- Modify `DEPLOYMENT_STRATEGY` for blue-green or canary deployments.
-- Adjust `COVERAGE_THRESHOLD`, `PERF_MAX_LATENCY_MS`, and `PERF_MAX_ERROR_RATE` for testing requirements.
-                    """
-                    writeFile file: 'README.md', text: readmeContent
-                }
-            }
-            post { always { archiveArtifacts artifacts: 'README.md', allowEmptyArchive: true } }
-        }
-    }
-
-    post {
-        always {
-            echo "🧹 Cleaning up..."
-            script {
-                sh """
-                    docker stop ${TEST_CONTAINER_NAME} perf-${TEST_CONTAINER_NAME} || true
-                    docker rm ${TEST_CONTAINER_NAME} perf-${TEST_CONTAINER_NAME} || true
-                    if [ "${USE_COMPOSE}" = "true" ]; then
-                        docker-compose -f ${APP_DIR}/${COMPOSE_FILE} down --volumes || true
-                    fi
-                    docker system prune -f --filter "until=24h" || true
-                    docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" > docker-stats.txt
-                    docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep ${IMAGE_NAME} > image-sizes.txt
-                """
-                archiveArtifacts artifacts
