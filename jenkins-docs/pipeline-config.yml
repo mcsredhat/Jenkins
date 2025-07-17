@@ -1,0 +1,207 @@
+# Enhanced Pipeline Configuration
+appType: node
+appPort: 3000
+testPort: 3001
+appDir: .
+composeFile: docker-compose.yml
+useCompose: false
+deploymentStrategy: rolling
+
+# Build Configuration
+build:
+  dockerfile: Dockerfile
+  context: .
+  target: production
+  args:
+    NODE_ENV: production
+    BUILD_DATE: "${BUILD_DATE}"
+  cache:
+    enabled: true
+    layers: [ "dependencies", "build" ]
+  multiarch:
+    enabled: true
+    platforms: [ "linux/amd64", "linux/arm64" ]
+
+# Security Configuration
+security:
+  signing:
+    enabled: true
+    keyId: "cosign-key"
+  scanners:
+    secrets:
+      enabled: true
+      tool: "truffleHog"
+      failOnHigh: false
+    vulnerabilities:
+      enabled: true
+      tools: [ "trivy", "grype" ]
+      thresholds:
+        critical: 0
+        high: 5
+        medium: 20
+    sast:
+      enabled: true
+      tools: [ "sonar", "semgrep" ]
+    dependencies:
+      enabled: true
+      failOnHigh: true
+
+# Testing Configuration
+testing:
+  unit:
+    enabled: true
+    coverage:
+      threshold: 80
+      format: [ "lcov", "cobertura" ]
+  integration:
+    enabled: true
+    timeout: 300
+    retries: 3
+  performance:
+    enabled: true
+    thresholds:
+      maxLatency: 1000
+      maxErrorRate: 0.01
+    duration: 60
+  contract:
+    enabled: false
+    provider: "pact"
+  chaos:
+    enabled: false
+    duration: 60
+
+# Deployment Configuration
+deployment:
+  environments:
+    staging:
+      enabled: true
+      port: 8088
+      replicas: 2
+      resources:
+        memory: "1Gi"
+        cpu: "500m"
+      healthcheck:
+        path: "/health"
+        timeout: 30
+        interval: 10
+    production:
+      enabled: true
+      port: 9090
+      replicas: 3
+      resources:
+        memory: "2Gi"
+        cpu: "1000m"
+      healthcheck:
+        path: "/health"
+        timeout: 30
+        interval: 10
+      approvalRequired: true
+
+  strategies:
+    rolling:
+      maxUnavailable: 1
+      maxSurge: 1
+    bluegreen:
+      testTrafficPercent: 10
+      promotionTimeout: 300
+    canary:
+      steps: [ 10, 25, 50, 100 ]
+      stepInterval: 300
+      analysis:
+        enabled: true
+        metrics: [ "success_rate", "latency_p95" ]
+
+# Monitoring Configuration
+monitoring:
+  metrics:
+    enabled: true
+    prometheus:
+      gateway: "http://pushgateway:9091"
+      namespace: "jenkins"
+    custom:
+    - name: "build_duration"
+      type: "histogram"
+    - name: "test_coverage"
+      type: "gauge"
+
+  tracing:
+    enabled: false
+    jaeger:
+      endpoint: "http://jaeger:14268/api/traces"
+
+  logging:
+    level: "INFO"
+    structured: true
+    retention: "7d"
+
+# Notifications Configuration
+notifications:
+  slack:
+    enabled: true
+    channel: "#deployments"
+    webhook: "${SLACK_WEBHOOK_URL}"
+    events: [ "success", "failure", "unstable" ]
+
+  email:
+    enabled: false
+    recipients: [ "team@company.com" ]
+    smtp:
+      server: "smtp.company.com"
+      port: 587
+
+  github:
+    enabled: true
+    token: "${GITHUB_TOKEN}"
+    events: [ "status", "pr_comment" ]
+
+# Resource Management
+resources:
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+
+  docker:
+    memory: "2g"
+    cpu: "2"
+    storage: "10g"
+
+# Feature Flags
+features:
+  parallelTesting: true
+  dockerCache: true
+  buildxEnabled: true
+  secretsDetection: true
+  dependencyCache: true
+  artifactCompression: true
+
+# Environment-specific overrides
+environments:
+  development:
+    security:
+      scanners:
+        vulnerabilities:
+          thresholds:
+            critical: 5
+            high: 10
+
+  staging:
+    deployment:
+      approvalRequired: false
+    testing:
+      performance:
+        enabled: false
+
+  production:
+    security:
+      signing:
+        required: true
+    deployment:
+      approvalRequired: true
+    monitoring:
+      metrics:
+        enabled: true
+      tracing:
+        enabled: true
