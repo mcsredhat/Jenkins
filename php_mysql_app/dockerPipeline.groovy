@@ -8,6 +8,12 @@ def validateInput(String input) {
 
 def buildImage(Map args) {
     dir(args.appDir) {
+        if (!env.GIT_COMMIT) {
+            error "GIT_COMMIT environment variable is not set"
+        }
+        if (!env.DOCKER_USERNAME) {
+            error "DOCKER_USERNAME environment variable is not set"
+        }
         def buildArgs = [
             "--build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "--build-arg VCS_REF=${env.GIT_COMMIT}",
@@ -57,6 +63,8 @@ def buildImage(Map args) {
         } catch (Exception e) {
             echo "❌ Build failed: ${e.getMessage()}"
             throw e
+        } finally {
+            sh "docker rmi ${validateInput(args.imageName)}:${validateInput(args.buildTag)} || true"
         }
     }
 }
@@ -76,9 +84,9 @@ def runIntegrationTests(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
                 args.appType == 'php' ? 
-                "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1" : 
+                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1" : 
                 "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
@@ -96,8 +104,9 @@ def runIntegrationTests(Map args) {
                     ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
                 timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${validateInput(args.testContainerName)} | grep -q "healthy"; do sleep 5; done'
                 if [ "${validateInput(args.appType)}" = "mysql" ]; then
-                    docker exec ${validateInput(args.testContainerName)} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}
-                    docker exec ${validateInput(args.testContainerName)} mysql -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#} -e "SHOW DATABASES;"
+                    docker exec ${validateInput(args.testContainerName)} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}
+                    docker exec ${validateInput(args.testContainerName)} mysql -u root --password=\${MYSQL_ROOT_PASSWORD} -e "SHOW DATABASES;"
+                    docker exec ${validateInput(args.testContainerName)} mysql -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD} -e "SELECT 1;"
                 elif [ "${validateInput(args.appType)}" = "php" ]; then
                     if [ ! -f "${validateInput(args.appDir)}/tests/run-tests.php" ]; then
                         echo "❌ PHP integration test file tests/run-tests.php not found"
@@ -185,8 +194,8 @@ def deployToEnvironment(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
-                "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
+                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
                 docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -207,9 +216,9 @@ def deployToEnvironment(Map args) {
         }
         sh """
             if [ "${validateInput(args.appType)}" != "mysql" ]; then
-                curl -f http://localhost:${validateInput(args.port)}/health || curl -f http://localhost:${validateInput(args.port)}/
+                curl -f http://localhost:${validateInput(args.port)}/ || curl -f http://localhost:${validateInput(args.port)}/
             else
-                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}
+                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}
             fi
         """
     } catch (Exception e) {
@@ -248,8 +257,8 @@ def deployBlueGreen(Map args) {
 
     try {
         def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
-            "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
+            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
+            "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
         def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
         sh """
             docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -282,14 +291,17 @@ def deployBlueGreen(Map args) {
 }
 
 def deployCanary(Map args) {
+    if (!fileExists('scripts/configure-canary.sh') || !fileExists('scripts/restore-production-traffic.sh')) {
+        error "Required canary scripts (scripts/configure-canary.sh, scripts/restore-production-traffic.sh) are missing"
+    }
     def canaryContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}-canary"
     def productionContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}"
     def canaryPort = (args.port as Integer) + 10
 
     try {
         def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
-            "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
+            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
+            "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
         def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
         sh """
             docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -306,18 +318,14 @@ def deployCanary(Map args) {
                 --health-retries=3 \
                 ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
             timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${canaryContainer} | grep -q "healthy"; do sleep 5; done'
-            if [ -f scripts/configure-canary.sh ]; then
-                ./scripts/configure-canary.sh ${validateInput(args.environment)} ${validateInput(args.port)} ${canaryPort} ${validateInput(args.canaryPercentage)}
-            fi
+            ./scripts/configure-canary.sh ${validateInput(args.environment)} ${validateInput(args.port)} ${canaryPort} ${validateInput(args.canaryPercentage)}
         """
         sleep 300
         sh """
             docker stop ${productionContainer} || true
             docker rm ${productionContainer} || true
             docker rename ${canaryContainer} ${productionContainer}
-            if [ -f scripts/restore-production-traffic.sh ]; then
-                ./scripts/restore-production-traffic.sh ${validateInput(args.environment)} ${validateInput(args.port)}
-            fi
+            ./scripts/restore-production-traffic.sh ${validateInput(args.environment)} ${validateInput(args.port)}
         """
     } catch (Exception e) {
         echo "❌ Canary deployment failed: ${e.getMessage()}"
@@ -347,8 +355,8 @@ def rollbackDeployment(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
-                "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
+                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
                 docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
