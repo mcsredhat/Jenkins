@@ -10,12 +10,13 @@ pipeline {
         DOCKER_USERNAME = "${env.DOCKER_USERNAME ?: 'farajassulai'}"
         DOCKER_CREDENTIALS_ID = "${env.DOCKER_CREDENTIALS_ID ?: 'dockerhub-credentials'}"
         DOCKER_REPO = "${env.APP_TYPE}-app"
-        IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
+        BUILD_TAG_SANITIZED = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}".toLowerCase().replace('_', '-')
+        IMAGE_NAME = "${env.DOCKER_USERNAME}/${env.DOCKER_REPO}:${env.BUILD_TAG_SANITIZED}"
         CONTAINER_NAME = "${env.APP_TYPE}-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-${env.APP_TYPE}-${env.BUILD_NUMBER}"
         ENABLE_BUILD_CACHE = "${env.ENABLE_BUILD_CACHE ?: 'true'}"
-        CACHE_FROM_IMAGE = "${env.CACHE_FROM_IMAGE ?: "${DOCKER_USERNAME}/${DOCKER_REPO}:cache"}"
+        CACHE_FROM_IMAGE = "${env.CACHE_FROM_IMAGE ?: "${env.DOCKER_USERNAME}/${env.DOCKER_REPO}:cache"}"
 
         // Application Configuration
         GITHUB_REPO = "${env.GITHUB_REPO ?: 'https://github.com/mcsredhat/Jenkins'}"
@@ -31,12 +32,11 @@ pipeline {
         DOCKER_CLI_EXPERIMENTAL = "${env.DOCKER_CLI_EXPERIMENTAL ?: 'enabled'}"
         DOCKER_PLATFORMS = "${env.DOCKER_PLATFORMS ?: 'linux/amd64,linux/arm64'}"
         ENABLE_MULTIARCH = "${env.ENABLE_MULTIARCH ?: 'false'}"
-        DOCKER_CONTENT_TRUST = "${env.DOCKER_CONTENT_TRUST ?: '0'}"
         DOCKER_SQUASH = "${env.DOCKER_SQUASH ?: 'false'}"
         DOCKER_NO_CACHE = "${env.DOCKER_NO_CACHE ?: 'false'}"
         DOCKER_MEMORY_LIMIT = "${env.DOCKER_MEMORY_LIMIT ?: '1g'}"
         DOCKER_CPU_LIMIT = "${env.DOCKER_CPU_LIMIT ?: '0.5'}"
-        DOCKER_NETWORK_MODE = "${env.DOCKER_NETWORK_MODE ?: 'bridge'}"
+        DOCKER_NETWORK_MODE = "${env.DOCKER_NETWORK_MODE ?: 'web-app-net'}"
         ENABLE_DOCKER_SWARM = "${env.ENABLE_DOCKER_SWARM ?: 'false'}"
 
         // Security and Quality
@@ -50,7 +50,7 @@ pipeline {
         FAIL_ON_SECRETS = "${env.FAIL_ON_SECRETS ?: 'false'}"
 
         // Deployment and Testing
-        DEPLOYMENT_STRATEGY = "${env.DEPLOYMENT_STRATEGY ?: 'rolling'}"
+        DEPLOYMENT_STRATEGY = "${env.DEPLOYMENT_STRATEGY ?: 'canary'}"
         CANARY_PERCENTAGE = "${env.CANARY_PERCENTAGE ?: '10'}"
         HEALTH_CHECK_TIMEOUT = "${env.HEALTH_CHECK_TIMEOUT ?: '300'}"
         ROLLBACK_ON_FAILURE = "${env.ROLLBACK_ON_FAILURE ?: 'true'}"
@@ -89,6 +89,34 @@ pipeline {
     }
 
     stages {
+        stage('Load Environment Variables') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
+                    string(credentialsId: 'mysql-user', variable: 'MYSQL_USER'),
+                    string(credentialsId: 'mysql-password', variable: 'MYSQL_PASSWORD'),
+                    string(credentialsId: 'mysql-database', variable: 'MYSQL_DATABASE'),
+                    string(credentialsId: 'slack-webhook', variable: 'SLACK_WEBHOOK_URL'),
+                    string(credentialsId: 'sonar-token', variable: 'SONAR_AUTH_TOKEN'),
+                    string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN'),
+                    usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
+                ]) {
+                    script {
+                        def envVars = readProperties file: "${env.APP_DIR}/.env"
+                        envVars.each { k, v -> env[k] = v }
+                        env.MYSQL_ROOT_PASSWORD = MYSQL_ROOT_PASSWORD
+                        env.MYSQL_USER = MYSQL_USER
+                        env.MYSQL_PASSWORD = MYSQL_PASSWORD
+                        env.MYSQL_DATABASE = MYSQL_DATABASE
+                        env.SLACK_WEBHOOK_URL = SLACK_WEBHOOK_URL
+                        env.SONAR_AUTH_TOKEN = SONAR_AUTH_TOKEN
+                        env.GITHUB_TOKEN = GITHUB_TOKEN
+                        env.DOCKER_USERNAME = DOCKER_USERNAME
+                    }
+                }
+            }
+        }
+
         stage('Initialize Configuration') {
             steps {
                 echo "⚙️ Initializing pipeline configuration..."
@@ -121,7 +149,7 @@ pipeline {
                         if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic', 'php'].contains(config.appType)) {
                             error "❌ Invalid appType '${config.appType}' in ${CONFIG_FILE}"
                         }
-                        if (!['rolling', 'blue-green'].contains(env.DEPLOYMENT_STRATEGY)) {
+                        if (!['rolling', 'blue-green', 'canary'].contains(env.DEPLOYMENT_STRATEGY)) {
                             error "❌ Invalid deployment strategy '${env.DEPLOYMENT_STRATEGY}'"
                         }
                     }
@@ -223,15 +251,7 @@ pipeline {
                             echo "❌ Dockerfile not found"
                             exit 1
                         fi
-                        if [ "${APP_TYPE}" = "node" ] && [ -f package.json ]; then
-                            npm ci --cache .build-cache/npm
-                        elif [ "${APP_TYPE}" = "python" ] && [ -f requirements.txt ]; then
-                            pip install -r requirements.txt --cache-dir .build-cache/pip
-                        elif [ "${APP_TYPE}" = "java" ] && [ -f pom.xml ]; then
-                            mvn dependency:resolve
-                        elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
-                            go mod download
-                        elif [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
+                        if [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
                             composer install --no-interaction --optimize-autoloader --no-dev
                         fi
                         mkdir -p .build-cache
@@ -316,15 +336,7 @@ pipeline {
                             try {
                                 sh """
                                     cd ${APP_DIR}
-                                    if [ "${APP_TYPE}" = "node" ] && [ -f package.json ]; then
-                                        npm audit --json > ../dependency-audit.json || echo "npm audit completed"
-                                    elif [ "${APP_TYPE}" = "python" ] && [ -f requirements.txt ]; then
-                                        safety check --json > ../dependency-audit.json || echo "safety check completed"
-                                    elif [ "${APP_TYPE}" = "java" ] && [ -f pom.xml ]; then
-                                        mvn org.owasp:dependency-check-maven:check -Dformat=json -DoutputDirectory=.. || echo "OWASP check completed"
-                                    elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
-                                        go list -json -m all | docker run --rm -i sonatypecommunity/nancy:latest > ../dependency-audit.json || echo "Nancy check completed"
-                                    elif [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
+                                    if [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
                                         composer audit --format=json > ../dependency-audit.json || echo "Composer audit completed"
                                     fi
                                 """
@@ -365,7 +377,7 @@ pipeline {
                     dockerPipeline.buildImage(
                         appDir: APP_DIR,
                         imageName: IMAGE_NAME,
-                        buildTag: BUILD_TAG,
+                        buildTag: BUILD_TAG_SANITIZED,
                         cacheFromImage: CACHE_FROM_IMAGE,
                         githubRepo: GITHUB_REPO,
                         appType: APP_TYPE,
@@ -388,13 +400,13 @@ pipeline {
                 echo "✅ Validating Docker best practices..."
                 script {
                     sh """
-                        if [ -f ${APP_DIR}/Dockerfile ]; then
-                            grep -q "FROM.*:latest" ${APP_DIR}/Dockerfile && echo "⚠️ Using 'latest' tag" || echo "✅ Specific base image tag used"
-                            grep -q "USER" ${APP_DIR}/Dockerfile && echo "✅ Non-root user specified" || echo "⚠️ No USER instruction found"
-                            grep -q "HEALTHCHECK" ${APP_DIR}/Dockerfile && echo "✅ Health check defined" || echo "⚠️ No health check defined"
+                        if [ -f ${APP_DIR}/php-apache/Dockerfile ]; then
+                            grep -q "FROM.*:latest" ${APP_DIR}/php-apache/Dockerfile && echo "⚠️ Using 'latest' tag" || echo "✅ Specific base image tag used"
+                            grep -q "USER" ${APP_DIR}/php-apache/Dockerfile && echo "✅ Non-root user specified" || echo "⚠️ No USER instruction found"
+                            grep -q "HEALTHCHECK" ${APP_DIR}/php-apache/Dockerfile && echo "✅ Health check defined" || echo "⚠️ No health check defined"
                         fi
-                        docker run --rm ${IMAGE_NAME}:${BUILD_TAG} id | grep -q "uid=0" && echo "⚠️ Running as root" || echo "✅ Running as non-root user"
-                        LAYERS=\$(docker history ${IMAGE_NAME}:${BUILD_TAG} --format "{{.ID}}" | wc -l)
+                        docker run --rm ${IMAGE_NAME} id | grep -q "uid=0" && echo "⚠️ Running as root" || echo "✅ Running as non-root user"
+                        LAYERS=\$(docker history ${IMAGE_NAME} --format "{{.ID}}" | wc -l)
                         if [ \$LAYERS -gt 50 ]; then
                             echo "⚠️ Too many layers (\$LAYERS)"
                         else
@@ -416,14 +428,11 @@ pipeline {
                             try {
                                 sh """
                                     cd ${APP_DIR}
-                                    case "${APP_TYPE}" in
-                                        "node") npm test -- --coverage --coverageReporters=lcov,text-summary ;;
-                                        "python") python -m pytest --cov=. --cov-report=xml --cov-report=html ;;
-                                        "java") mvn test jacoco:report ;;
-                                        "go") go test -v -cover -coverprofile=coverage.out ./... ;;
-                                        "php") php vendor/bin/phpunit --coverage-clover coverage.xml --log-junit test-results.xml ;;
-                                        "generic") echo "No unit tests defined for generic app type" ;;
-                                    esac
+                                    if [ "${APP_TYPE}" = "php" ] && [ -f vendor/bin/phpunit ]; then
+                                        php vendor/bin/phpunit --coverage-clover coverage.xml --log-junit test-results.xml
+                                    else
+                                        echo "No unit tests defined for ${APP_TYPE}"
+                                    fi
                                 """
                             } catch (Exception e) {
                                 echo "❌ Unit tests failed: ${e.getMessage()}"
@@ -454,7 +463,7 @@ pipeline {
                                 composeFile: "${APP_DIR}/${COMPOSE_FILE}",
                                 testContainerName: TEST_CONTAINER_NAME,
                                 imageName: IMAGE_NAME,
-                                buildTag: BUILD_TAG,
+                                buildTag: BUILD_TAG_SANITIZED,
                                 testPort: TEST_PORT,
                                 appPort: APP_PORT,
                                 appType: APP_TYPE,
@@ -484,7 +493,7 @@ pipeline {
                                         -e ENVIRONMENT=performance \
                                         --memory=${DOCKER_MEMORY_LIMIT} \
                                         --cpus=${DOCKER_CPU_LIMIT} \
-                                        ${IMAGE_NAME}:${BUILD_TAG}
+                                        ${IMAGE_NAME}
                                     sleep 20
                                     ab -n 1000 -c 10 -g performance-results.tsv http://localhost:${TEST_PORT}/ || echo "Performance test completed"
                                     if [ -f performance-results.tsv ]; then
@@ -513,7 +522,6 @@ pipeline {
                                 docker stop perf-${TEST_CONTAINER_NAME} || true
                                 docker rm perf-${TEST_CONTAINER_NAME} || true
                                 docker network rm web-app-net || true
-                                docker rmi ${IMAGE_NAME}:${BUILD_TAG} || true
                             """
                             archiveArtifacts artifacts: 'performance-*.tsv,performance-test-logs.txt', allowEmptyArchive: true
                         }
@@ -528,11 +536,11 @@ pipeline {
                 echo "🔒 Running Docker security hardening checks..."
                 script {
                     sh """
-                        docker inspect ${IMAGE_NAME}:${BUILD_TAG} --format='{{.Config.Privileged}}' | grep -q "false" || echo "⚠️ Privileged container detected"
-                        docker inspect ${IMAGE_NAME}:${BUILD_TAG} --format='{{.Config.User}}' || echo "⚠️ No user specified in image"
+                        docker inspect ${IMAGE_NAME} --format='{{.Config.Privileged}}' | grep -q "false" || echo "⚠️ Privileged container detected"
+                        docker inspect ${IMAGE_NAME} --format='{{.Config.User}}' || echo "⚠️ No user specified in image"
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                             aquasec/trivy:latest image --format json --output image-vulnerabilities.json \
-                            --severity LOW,MEDIUM,HIGH,CRITICAL --ignore-unfixed ${IMAGE_NAME}:${BUILD_TAG}
+                            --severity LOW,MEDIUM,HIGH,CRITICAL --ignore-unfixed ${IMAGE_NAME}
                         CRITICAL_COUNT=\$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' image-vulnerabilities.json)
                         if [ "\$CRITICAL_COUNT" -gt ${MAX_CRITICAL_VULNERABILITIES} ]; then
                             echo "❌ Too many CRITICAL vulnerabilities: \$CRITICAL_COUNT"
@@ -557,7 +565,7 @@ pipeline {
                 script {
                     dockerPipeline.pushToRegistry(
                         imageName: IMAGE_NAME,
-                        buildTag: BUILD_TAG,
+                        buildTag: BUILD_TAG_SANITIZED,
                         dockerRegistry: DOCKER_REGISTRY,
                         credentialsId: DOCKER_CREDENTIALS_ID,
                         branchName: env.BRANCH_NAME
@@ -586,7 +594,7 @@ pipeline {
                         serviceName: "${env.APP_TYPE}-app-staging",
                         port: env.STAGING_PORT ?: config.deployment.environments.staging.services[env.APP_TYPE].port.toString(),
                         imageName: IMAGE_NAME,
-                        buildTag: BUILD_TAG,
+                        buildTag: BUILD_TAG_SANITIZED,
                         appType: APP_TYPE,
                         useCompose: env.USE_COMPOSE == 'true',
                         composeFile: "${APP_DIR}/${COMPOSE_FILE}",
@@ -616,7 +624,7 @@ pipeline {
             steps {
                 script {
                     timeout(time: 10, unit: 'MINUTES') {
-                        input message: "Deploy ${APP_TYPE} ${BUILD_TAG} to production?", ok: 'Deploy'
+                        input message: "Deploy ${APP_TYPE} ${BUILD_TAG_SANITIZED} to production?", ok: 'Deploy'
                     }
                     echo "🚀 Deploying to production with ${DEPLOYMENT_STRATEGY} strategy..."
                     def config = readYaml file: "${APP_DIR}/pipeline-config.yml"
@@ -625,7 +633,7 @@ pipeline {
                         serviceName: "${env.APP_TYPE}-app-production",
                         port: env.PRODUCTION_PORT ?: config.deployment.environments.production.services[env.APP_TYPE].port.toString(),
                         imageName: IMAGE_NAME,
-                        buildTag: BUILD_TAG,
+                        buildTag: BUILD_TAG_SANITIZED,
                         appType: APP_TYPE,
                         useCompose: env.USE_COMPOSE == 'true',
                         composeFile: "${APP_DIR}/${COMPOSE_FILE}",
@@ -679,7 +687,7 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
         always {
             sh """
                 docker network rm web-app-net || true
-                docker rmi ${IMAGE_NAME}:${BUILD_TAG} || true
+                docker rmi ${env.IMAGE_NAME} || true
             """
         }
     }
