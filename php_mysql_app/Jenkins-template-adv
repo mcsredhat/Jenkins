@@ -1,0 +1,738 @@
+@Library('shared-pipeline-library') _
+
+pipeline {
+    agent any
+
+    environment {
+        // Core Configuration
+        CONFIG_FILE = "${env.APP_DIR ?: '.'}/pipeline-config.yml"
+        DOCKER_REGISTRY = "${env.DOCKER_REGISTRY ?: 'https://index.docker.io/v1/'}"
+        DOCKER_USERNAME = "${env.DOCKER_USERNAME ?: 'farajassulai'}"
+        DOCKER_REPO = "${env.APP_TYPE}-app"
+        IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
+        BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
+        CONTAINER_NAME = "${env.APP_TYPE}-${env.BUILD_NUMBER}"
+        TEST_CONTAINER_NAME = "test-${env.APP_TYPE}-${env.BUILD_NUMBER}"
+
+        // Application Configuration
+        GITHUB_REPO = "${env.GITHUB_REPO ?: 'https://github.com/mcsredhat/Jenkins'}"
+        APP_PORT = "${env.APP_PORT ?: '8383'}"
+        TEST_PORT = "${env.TEST_PORT ?: '9393'}"
+        APP_DIR = "${env.APP_DIR ?: '.'}"
+        COMPOSE_FILE = "${env.COMPOSE_FILE ?: 'docker-compose.yml'}"
+        USE_COMPOSE = "${env.USE_COMPOSE ?: 'false'}"
+        APP_TYPE = "${env.APP_TYPE ?: 'generic'}"
+
+        // Docker Configuration
+        DOCKER_BUILDKIT = "${env.DOCKER_BUILDKIT ?: '1'}"
+        COMPOSE_DOCKER_CLI_BUILD = "${env.COMPOSE_DOCKER_CLI_BUILD ?: '1'}"
+        DOCKER_SCAN_SUGGEST = "${env.DOCKER_SCAN_SUGGEST ?: 'false'}"
+        DOCKER_CLI_EXPERIMENTAL = "${env.DOCKER_CLI_EXPERIMENTAL ?: 'enabled'}"
+        DOCKER_PLATFORMS = "${env.DOCKER_PLATFORMS ?: 'linux/amd64,linux/arm64'}"
+        ENABLE_MULTIARCH = "${env.ENABLE_MULTIARCH ?: 'false'}"
+        DOCKER_CONTENT_TRUST = "${env.DOCKER_CONTENT_TRUST ?: '0'}"
+        DOCKER_SQUASH = "${env.DOCKER_SQUASH ?: 'false'}"
+        DOCKER_NO_CACHE = "${env.DOCKER_NO_CACHE ?: 'false'}"
+        DOCKER_MEMORY_LIMIT = "${env.DOCKER_MEMORY_LIMIT ?: '2g'}"
+        DOCKER_CPU_LIMIT = "${env.DOCKER_CPU_LIMIT ?: '2'}"
+        DOCKER_NETWORK_MODE = "${env.DOCKER_NETWORK_MODE ?: 'bridge'}"
+        ENABLE_DOCKER_SWARM = "${env.ENABLE_DOCKER_SWARM ?: 'false'}"
+
+        // Security and Quality
+        ENABLE_SECRETS_SCAN = "${env.ENABLE_SECRETS_SCAN ?: 'true'}"
+        ENABLE_SAST_SCAN = "${env.ENABLE_SAST_SCAN ?: 'true'}"
+        ENABLE_DEPENDENCY_SCAN = "${env.ENABLE_DEPENDENCY_SCAN ?: 'true'}"
+        ENABLE_CODE_COVERAGE = "${env.ENABLE_CODE_COVERAGE ?: 'true'}"
+        COVERAGE_THRESHOLD = "${env.COVERAGE_THRESHOLD ?: '80'}"
+        ENABLE_IMAGE_SIGNING = "${env.ENABLE_IMAGE_SIGNING ?: 'false'}"
+        MAX_CRITICAL_VULNERABILITIES = "${env.MAX_CRITICAL_VULNERABILITIES ?: '2'}"
+        FAIL_ON_SECRETS = "${env.FAIL_ON_SECRETS ?: 'false'}"
+
+        // Deployment and Testing
+        DEPLOYMENT_STRATEGY = "${env.DEPLOYMENT_STRATEGY ?: 'rolling'}"
+        CANARY_PERCENTAGE = "${env.CANARY_PERCENTAGE ?: '10'}"
+        HEALTH_CHECK_TIMEOUT = "${env.HEALTH_CHECK_TIMEOUT ?: '300'}"
+        ROLLBACK_ON_FAILURE = "${env.ROLLBACK_ON_FAILURE ?: 'true'}"
+        PERF_MAX_LATENCY_MS = "${env.PERF_MAX_LATENCY_MS ?: '1000'}"
+        PERF_MAX_ERROR_RATE = "${env.PERF_MAX_ERROR_RATE ?: '0.01'}"
+
+        // Control Flags
+        SKIP_SECURITY_SCAN = "${env.SKIP_SECURITY_SCAN ?: 'false'}"
+        ENABLE_DOCKER_PUSH = "${env.ENABLE_DOCKER_PUSH ?: 'true'}"
+        ENABLE_STAGING_DEPLOY = "${env.ENABLE_STAGING_DEPLOY ?: 'true'}"
+        ENABLE_PRODUCTION_DEPLOY = "${env.ENABLE_PRODUCTION_DEPLOY ?: 'true'}"
+        ENABLE_PARALLEL_TESTING = "${env.ENABLE_PARALLEL_TESTING ?: 'true'}"
+        FORCE_BRANCH_MAIN = "${env.FORCE_BRANCH_MAIN ?: 'true'}"
+        FORCE_BRANCH_DEVELOP = "${env.FORCE_BRANCH_DEVELOP ?: 'false'}"
+
+        // Monitoring
+        ENABLE_METRICS = "${env.ENABLE_METRICS ?: 'true'}"
+        PROMETHEUS_GATEWAY = "${env.PROMETHEUS_GATEWAY ?: 'http://pushgateway:9091'}"
+        ENABLE_TRACING = "${env.ENABLE_TRACING ?: 'false'}"
+        JAEGER_ENDPOINT = "${env.JAEGER_ENDPOINT ?: 'http://jaeger:14268/api/traces'}"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '5'))
+        timeout(time: 1, unit: 'HOURS')
+        skipDefaultCheckout()
+        parallelsAlwaysFailFast()
+        disableConcurrentBuilds()
+        timestamps()
+        ansiColor('xterm')
+    }
+
+    triggers {
+        githubPush()
+        cron(env.BRANCH_NAME == 'main' ? 'H 2 * * 0' : '')
+    }
+
+    stages {
+        stage('Initialize Configuration') {
+            steps {
+                echo "⚙️ Initializing pipeline configuration..."
+                script {
+                    // Validate required environment variables
+                    def requiredVars = ['DOCKER_USERNAME', 'APP_TYPE', 'APP_DIR']
+                    requiredVars.each { var ->
+                        if (!env[var]) {
+                            error "❌ Required environment variable ${var} is not set"
+                        }
+                    }
+
+                    // Load and validate configuration from pipeline-config.yml
+                    if (fileExists(CONFIG_FILE)) {
+                        def config = readYaml file: CONFIG_FILE
+                        env.APP_TYPE = config.appType ?: env.APP_TYPE
+                        env.APP_PORT = config.appPort ?: env.APP_PORT
+                        env.TEST_PORT = config.testPort ?: env.TEST_PORT
+                        env.APP_DIR = config.appDir ?: env.APP_DIR
+                        env.COMPOSE_FILE = config.composeFile ?: env.COMPOSE_FILE
+                        env.USE_COMPOSE = config.useCompose ?: env.USE_COMPOSE
+                        env.DEPLOYMENT_STRATEGY = config.deploymentStrategy ?: env.DEPLOYMENT_STRATEGY
+
+                        // Validate configuration
+                        if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic'].contains(config.appType)) {
+                            error "❌ Invalid appType '${config.appType}' in ${CONFIG_FILE}"
+                        }
+                    }
+
+                    // Dynamic detection of Dockerfile vs docker-compose
+                    def hasCompose = fileExists("${APP_DIR}/${COMPOSE_FILE}")
+                    def hasDockerfile = fileExists("${APP_DIR}/Dockerfile")
+                    if (hasCompose && !hasDockerfile) {
+                        env.USE_COMPOSE = 'true'
+                    } else if (hasDockerfile && !hasCompose) {
+                        env.USE_COMPOSE = 'false'
+                    } else if (hasCompose && hasDockerfile) {
+                        echo "⚠️ Both Dockerfile and ${COMPOSE_FILE} found. Using USE_COMPOSE=${USE_COMPOSE}."
+                    } else {
+                        error "❌ Neither Dockerfile nor ${COMPOSE_FILE} found in ${APP_DIR}"
+                    }
+
+                    echo "Configuration: APP_TYPE=${APP_TYPE}, USE_COMPOSE=${USE_COMPOSE}, APP_DIR=${APP_DIR}, DEPLOYMENT_STRATEGY=${DEPLOYMENT_STRATEGY}"
+                }
+            }
+        }
+
+        stage('Docker Daemon Validation') {
+            steps {
+                echo "🐳 Validating Docker daemon and configuration..."
+                script {
+                    sh """
+                        # Check Docker daemon status and version
+                        docker info --format '{{.ServerVersion}}' || exit 1
+                        docker system df
+                        docker system events --since 1m --until 1m &
+
+                        # Validate BuildKit support
+                        if [ "${DOCKER_BUILDKIT}" = "1" ]; then
+                            docker buildx version || echo "BuildKit not available"
+                            docker buildx ls
+                        fi
+
+                        # Check registry connectivity
+                        docker pull hello-world:latest
+                        docker rmi hello-world:latest
+
+                        # Validate Docker Compose if used
+                        if [ "${USE_COMPOSE}" = "true" ]; then
+                            docker-compose --version
+                            docker-compose -f ${APP_DIR}/${COMPOSE_FILE} config --quiet || exit 1
+                        fi
+
+                        # Validate network configuration
+                        docker network ls
+                        docker network inspect ${DOCKER_NETWORK_MODE} || echo "Network ${DOCKER_NETWORK_MODE} not found"
+                    """
+                }
+            }
+        }
+
+        stage('Tool Validation') {
+            steps {
+                echo "🔧 Validating required tools..."
+                script {
+                    def tools = [
+                        'docker': [cmd: 'docker --version', required: true],
+                        'trivy': [cmd: 'docker run --rm aquasec/trivy:latest --version', required: env.ENABLE_SECRETS_SCAN == 'true' || env.SKIP_SECURITY_SCAN != 'true'],
+                        'truffleHog': [cmd: 'truffleHog3 --version || pip install truffleHog3', required: env.ENABLE_SECRETS_SCAN == 'true'],
+                        'sonar-scanner': [cmd: 'sonar-scanner --version || echo "SonarQube not installed"', required: env.ENABLE_SAST_SCAN == 'true'],
+                        'semgrep': [cmd: 'semgrep --version || echo "Semgrep not installed"', required: env.ENABLE_SAST_SCAN == 'true'],
+                        'grype': [cmd: 'grype --version || echo "Grype not installed"', required: env.SKIP_SECURITY_SCAN != 'true'],
+                        'cosign': [cmd: 'cosign version || echo "Cosign not installed"', required: env.ENABLE_IMAGE_SIGNING == 'true']
+                    ]
+                    tools.each { tool, config ->
+                        def status = sh(script: config.cmd, returnStatus: true)
+                        echo "${tool}: ${status == 0 ? 'Available' : 'Not available, skipping related steps'}"
+                        if (config.required && status != 0) {
+                            error "❌ Required tool ${tool} is not available"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Checkout & Setup') {
+            steps {
+                echo "📦 Checking out code and setting up environment..."
+                checkout scm
+                script {
+                    sh """
+                        cd ${APP_DIR}
+                        if [ "${USE_COMPOSE}" = "true" ] && [ ! -f ${COMPOSE_FILE} ]; then
+                            echo "❌ ${COMPOSE_FILE} not found"
+                            exit 1
+                        elif [ "${USE_COMPOSE}" = "false" ] && [ ! -f Dockerfile ]; then
+                            echo "❌ Dockerfile not found"
+                            exit 1
+                        fi
+                        if [ "${APP_TYPE}" = "node" ] && [ -f package.json ]; then
+                            npm ci --cache .build-cache/npm
+                        elif [ "${APP_TYPE}" = "python" ] && [ -f requirements.txt ]; then
+                            pip install -r requirements.txt --cache-dir .build-cache/pip
+                        elif [ "${APP_TYPE}" = "java" ] && [ -f pom.xml ]; then
+                            mvn dependency:resolve
+                        elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
+                            go mod download
+                        fi
+                        mkdir -p .build-cache
+                    """
+                    writeFile file: 'build-metadata.json', text: """{
+                        "buildNumber": "${env.BUILD_NUMBER}",
+                        "gitCommit": "${env.GIT_COMMIT}",
+                        "branch": "${env.BRANCH_NAME}",
+                        "timestamp": "${new Date().format('yyyy-MM-dd HH:mm:ss')}",
+                        "appType": "${APP_TYPE}",
+                        "deploymentStrategy": "${DEPLOYMENT_STRATEGY}"
+                    }"""
+                }
+            }
+        }
+
+        stage('Pre-Build Analysis') {
+            when { expression { env.APP_TYPE != 'mysql' } }
+            parallel {
+                stage('Secrets Scanning') {
+                    when { environment name: 'ENABLE_SECRETS_SCAN', value: 'true' }
+                    steps {
+                        echo "🔍 Scanning for secrets..."
+                        script {
+                            try {
+                                sh """
+                                    truffleHog3 --no-history --format json ${APP_DIR} > secrets-report.json || echo "Secrets scan completed"
+                                    if [ -f secrets-report.json ]; then
+                                        HIGH_CONFIDENCE=\$(jq '[.[] | select(.confidence == "high")] | length' secrets-report.json)
+                                        if [ "\$HIGH_CONFIDENCE" -gt 0 ]; then
+                                            echo "⚠️ High-confidence secrets found: \$HIGH_CONFIDENCE"
+                                            if [ "${FAIL_ON_SECRETS}" = "true" ]; then
+                                                echo "❌ Failing build due to secrets detection"
+                                                exit 1
+                                            fi
+                                            currentBuild.result = 'UNSTABLE'
+                                        fi
+                                    fi
+                                """
+                            } catch (Exception e) {
+                                echo "❌ Secrets scan failed: ${e.getMessage()}"
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
+                    post { always { archiveArtifacts artifacts: 'secrets-report.json', allowEmptyArchive: true } }
+                }
+
+                stage('SAST Analysis') {
+                    when { environment name: 'ENABLE_SAST_SCAN', value: 'true' }
+                    steps {
+                        echo "🔬 Running SAST..."
+                        script {
+                            try {
+                                sh """
+                                    if command -v sonar-scanner &> /dev/null; then
+                                        sonar-scanner \
+                                            -Dsonar.projectKey=${env.JOB_NAME} \
+                                            -Dsonar.sources=${APP_DIR} \
+                                            -Dsonar.host.url=\${SONAR_HOST_URL} \
+                                            -Dsonar.login=\${SONAR_AUTH_TOKEN} || echo "SonarQube scan completed"
+                                    fi
+                                    if command -v semgrep &> /dev/null; then
+                                        semgrep --config=auto --json --output=sast-report.json ${APP_DIR} || echo "Semgrep scan completed"
+                                    fi
+                                """
+                            } catch (Exception e) {
+                                echo "❌ SAST analysis failed: ${e.getMessage()}"
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
+                    post { always { archiveArtifacts artifacts: 'sast-report.json', allowEmptyArchive: true } }
+                }
+
+                stage('Dependency Scanning') {
+                    when { environment name: 'ENABLE_DEPENDENCY_SCAN', value: 'true' }
+                    steps {
+                        echo "📋 Scanning dependencies..."
+                        script {
+                            try {
+                                sh """
+                                    cd ${APP_DIR}
+                                    if [ "${APP_TYPE}" = "node" ] && [ -f package.json ]; then
+                                        npm audit --json > ../dependency-audit.json || echo "npm audit completed"
+                                    elif [ "${APP_TYPE}" = "python" ] && [ -f requirements.txt ]; then
+                                        safety check --json > ../dependency-audit.json || echo "safety check completed"
+                                    elif [ "${APP_TYPE}" = "java" ] && [ -f pom.xml ]; then
+                                        mvn org.owasp:dependency-check-maven:check -Dformat=json -DoutputDirectory=.. || echo "OWASP check completed"
+                                    elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
+                                        go list -json -m all | docker run --rm -i sonatypecommunity/nancy:latest > ../dependency-audit.json || echo "Nancy check completed"
+                                    fi
+                                """
+                            } catch (Exception e) {
+                                echo "❌ Dependency scan failed: ${e.getMessage()}"
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
+                    post { always { archiveArtifacts artifacts: 'dependency-audit.json', allowEmptyArchive: true } }
+                }
+            }
+        }
+
+        stage('Docker Cache Optimization') {
+            when { environment name: 'ENABLE_BUILD_CACHE', value: 'true' }
+            steps {
+                echo "🚀 Optimizing Docker build cache..."
+                script {
+                    sh """
+                        if [ "${ENABLE_DOCKER_CACHE}" = "true" ]; then
+                            docker buildx build --cache-to type=registry,ref=${CACHE_FROM_IMAGE},mode=max . || echo "Cache push failed"
+                            docker buildx prune --filter until=24h --force || echo "Cache cleanup completed"
+                        fi
+                        docker system prune -f --filter "until=24h" || echo "System cleanup completed"
+                        docker system df > cache-stats.txt
+                        docker buildx du > buildx-cache-stats.txt || echo "BuildX cache stats not available"
+                    """
+                }
+            }
+            post { always { archiveArtifacts artifacts: 'cache-stats.txt,buildx-cache-stats.txt', allowEmptyArchive: true } }
+        }
+
+        stage('Advanced Docker Build') {
+            steps {
+                echo "🔧 Building Docker image with advanced features..."
+                script {
+                    dockerPipeline.buildImage(
+                        appDir: APP_DIR,
+                        imageName: IMAGE_NAME,
+                        buildTag: BUILD_TAG,
+                        cacheFromImage: CACHE_FROM_IMAGE,
+                        githubRepo: GITHUB_REPO,
+                        appType: APP_TYPE,
+                        environment: env.ENVIRONMENT ?: 'development',
+                        useCompose: env.USE_COMPOSE == 'true',
+                        composeFile: COMPOSE_FILE,
+                        enableMultiArch: env.ENABLE_MULTIARCH == 'true',
+                        dockerPlatforms: DOCKER_PLATFORMS,
+                        enableDockerCache: env.ENABLE_DOCKER_CACHE == 'true',
+                        dockerSquash: env.DOCKER_SQUASH == 'true',
+                        dockerNoCache: env.DOCKER_NO_CACHE == 'true'
+                    )
+                }
+            }
+            post { always { archiveArtifacts artifacts: 'image-layers.txt,sbom.json', allowEmptyArchive: true } }
+        }
+
+        stage('Docker Best Practices Validation') {
+            steps {
+                echo "✅ Validating Docker best practices..."
+                script {
+                    sh """
+                        if [ -f ${APP_DIR}/Dockerfile ]; then
+                            grep -q "FROM.*:latest" ${APP_DIR}/Dockerfile && echo "⚠️ Using 'latest' tag" || echo "✅ Specific base image tag used"
+                            grep -q "USER" ${APP_DIR}/Dockerfile && echo "✅ Non-root user specified" || echo "⚠️ No USER instruction found"
+                            grep -q "HEALTHCHECK" ${APP_DIR}/Dockerfile && echo "✅ Health check defined" || echo "⚠️ No health check defined"
+                        fi
+                        docker run --rm ${IMAGE_NAME}:${BUILD_TAG} id | grep -q "uid=0" && echo "⚠️ Running as root" || echo "✅ Running as non-root user"
+                        LAYERS=\$(docker history ${IMAGE_NAME}:${BUILD_TAG} --format "{{.ID}}" | wc -l)
+                        if [ \$LAYERS -gt 50 ]; then
+                            echo "⚠️ Too many layers (\$LAYERS)"
+                        else
+                            echo "✅ Layer count optimal (\$LAYERS)"
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Comprehensive Testing') {
+            when { expression { env.APP_TYPE != 'mysql' || env.USE_COMPOSE == 'true' } }
+            parallel {
+                stage('Unit Tests') {
+                    when { expression { env.APP_TYPE != 'mysql' } }
+                    steps {
+                        echo "🧪 Running unit tests..."
+                        script {
+                            try {
+                                sh """
+                                    cd ${APP_DIR}
+                                    case "${APP_TYPE}" in
+                                        "node") npm test -- --coverage --coverageReporters=lcov,text-summary ;;
+                                        "python") python -m pytest --cov=. --cov-report=xml --cov-report=html ;;
+                                        "java") mvn test jacoco:report ;;
+                                        "go") go test -v -cover -coverprofile=coverage.out ./... ;;
+                                        "generic") echo "No unit tests defined for generic app type" ;;
+                                    esac
+                                """
+                            } catch (Exception e) {
+                                echo "❌ Unit tests failed: ${e.getMessage()}"
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            publishTestResults testResultsPattern: '**/test-results.xml', allowEmptyResults: true
+                            publishCoverage adapters: [
+                                istanbulCoberturaAdapter('**/coverage/cobertura-coverage.xml'),
+                                coberturaAdapter('**/coverage.xml')
+                            ], sourceFileResolver: sourceFiles('STORE_ALL_BUILD')
+                        }
+                    }
+                }
+
+                stage('Integration Tests') {
+                    steps {
+                        echo "🔗 Running integration tests..."
+                        script {
+                            dockerPipeline.runIntegrationTests(
+                                useCompose: env.USE_COMPOSE == 'true',
+                                composeFile: "${APP_DIR}/${COMPOSE_FILE}",
+                                testContainerName: TEST_CONTAINER_NAME,
+                                imageName: IMAGE_NAME,
+                                buildTag: BUILD_TAG,
+                                testPort: TEST_PORT,
+                                appPort: APP_PORT,
+                                appType: APP_TYPE,
+                                memoryLimit: DOCKER_MEMORY_LIMIT,
+                                cpuLimit: DOCKER_CPU_LIMIT,
+                                networkMode: DOCKER_NETWORK_MODE,
+                                healthCheckTimeout: HEALTH_CHECK_TIMEOUT
+                            )
+                        }
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'integration-test-logs.txt', allowEmptyArchive: true
+                        }
+                    }
+                }
+
+                stage('Performance Tests') {
+                    when { expression { env.APP_TYPE != 'mysql' } }
+                    steps {
+                        echo "⚡ Running performance tests..."
+                        script {
+                            try {
+                                sh """
+                                    docker run -d --name perf-${TEST_CONTAINER_NAME} \
+                                        -p ${TEST_PORT}:${APP_PORT} \
+                                        -e ENVIRONMENT=performance \
+                                        --memory=${DOCKER_MEMORY_LIMIT} \
+                                        --cpus=${DOCKER_CPU_LIMIT} \
+                                        ${IMAGE_NAME}:${BUILD_TAG}
+                                    sleep 20
+                                    ab -n 1000 -c 10 -g performance-results.tsv http://localhost:${TEST_PORT}/ || echo "Performance test completed"
+                                    if [ -f performance-results.tsv ]; then
+                                        AVG_LATENCY=\$(awk '{sum+=\$9} END {print sum/NR}' performance-results.tsv)
+                                        ERROR_RATE=\$(awk '\$10 != 200 {errors++} END {print errors/NR}' performance-results.tsv)
+                                        if [ \$(echo "\$AVG_LATENCY > ${PERF_MAX_LATENCY_MS}" | bc) -eq 1 ]; then
+                                            echo "❌ Average latency \$AVG_LATENCY ms exceeds threshold ${PERF_MAX_LATENCY_MS} ms"
+                                            exit 1
+                                        fi
+                                        if [ \$(echo "\$ERROR_RATE > ${PERF_MAX_ERROR_RATE}" | bc) -eq 1 ]; then
+                                            echo "❌ Error rate \$ERROR_RATE exceeds threshold ${PERF_MAX_ERROR_RATE}"
+                                            exit 1
+                                        fi
+                                    fi
+                                """
+                            } catch (Exception e) {
+                                echo "❌ Performance tests failed: ${e.getMessage()}"
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            sh """
+                                docker logs perf-${TEST_CONTAINER_NAME} > performance-test-logs.txt || true
+                                docker stop perf-${TEST_CONTAINER_NAME} || true
+                                docker rm perf-${TEST_CONTAINER_NAME} || true
+                            """
+                            archiveArtifacts artifacts: 'performance-*.tsv,performance-test-logs.txt', allowEmptyArchive: true
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Docker Security Hardening') {
+            when { environment name: 'SKIP_SECURITY_SCAN', value: 'false' }
+            steps {
+                echo "🔒 Running Docker security hardening checks..."
+                script {
+                    sh """
+                        docker inspect ${IMAGE_NAME}:${BUILD_TAG} --format='{{.Config.Privileged}}' | grep -q "false" || echo "⚠️ Privileged container detected"
+                        docker inspect ${IMAGE_NAME}:${BUILD_TAG} --format='{{.Config.User}}' || echo "⚠️ No user specified in image"
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy:latest image --format json --output image-vulnerabilities.json \
+                            --severity LOW,MEDIUM,HIGH,CRITICAL --ignore-unfixed ${IMAGE_NAME}:${BUILD_TAG}
+                        CRITICAL_COUNT=\$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' image-vulnerabilities.json)
+                        if [ "\$CRITICAL_COUNT" -gt ${MAX_CRITICAL_VULNERABILITIES} ]; then
+                            echo "❌ Too many CRITICAL vulnerabilities: \$CRITICAL_COUNT"
+                            exit 1
+                        fi
+                    """
+                }
+            }
+            post { always { archiveArtifacts artifacts: 'image-vulnerabilities.json', allowEmptyArchive: true } }
+        }
+
+        stage('Push to Registry') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                    environment name: 'ENABLE_DOCKER_PUSH', value: 'true'
+                }
+            }
+            steps {
+                echo "📤 Pushing image to registry..."
+                script {
+                    dockerPipeline.pushToRegistry(
+                        imageName: IMAGE_NAME,
+                        buildTag: BUILD_TAG,
+                        dockerRegistry: DOCKER_REGISTRY,
+                        credentialsId: 'dockerhub-credentials',
+                        branchName: env.BRANCH_NAME
+                    )
+                }
+            }
+            post { always { archiveArtifacts artifacts: 'existing-tags.txt,registry-manifest.json', allowEmptyArchive: true } }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                allOf {
+                    environment name: 'ENABLE_STAGING_DEPLOY', value: 'true'
+                    anyOf {
+                        branch 'develop'
+                        environment name: 'FORCE_BRANCH_DEVELOP', value: 'true'
+                    }
+                }
+            }
+            steps {
+                echo "🚀 Deploying to staging..."
+                script {
+                    dockerPipeline.deploy(
+                        environment: 'staging',
+                        serviceName: "${env.APP_TYPE}-app-staging",
+                        port: env.STAGING_PORT ?: '8088',
+                        imageName: IMAGE_NAME,
+                        buildTag: BUILD_TAG,
+                        appType: APP_TYPE,
+                        useCompose: env.USE_COMPOSE == 'true',
+                        composeFile: "${APP_DIR}/${COMPOSE_FILE}",
+                        enableSwarm: env.ENABLE_DOCKER_SWARM == 'true',
+                        deploymentStrategy: DEPLOYMENT_STRATEGY,
+                        memoryLimit: DOCKER_MEMORY_LIMIT,
+                        cpuLimit: DOCKER_CPU_LIMIT,
+                        networkMode: DOCKER_NETWORK_MODE,
+                        healthCheckTimeout: HEALTH_CHECK_TIMEOUT,
+                        canaryPercentage: CANARY_PERCENTAGE,
+                        rollbackOnFailure: env.ROLLBACK_ON_FAILURE == 'true'
+                    )
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                allOf {
+                    environment name: 'ENABLE_PRODUCTION_DEPLOY', value: 'true'
+                    anyOf {
+                        branch 'main'
+                        environment name: 'FORCE_BRANCH_MAIN', value: 'true'
+                    }
+                }
+            }
+            steps {
+                script {
+                    timeout(time: 10, unit: 'MINUTES') {
+                        input message: "Deploy ${APP_TYPE} ${BUILD_TAG} to production?", ok: 'Deploy'
+                    }
+                    echo "🚀 Deploying to production with ${DEPLOYMENT_STRATEGY} strategy..."
+                    dockerPipeline.deploy(
+                        environment: 'production',
+                        serviceName: "${env.APP_TYPE}-app-production",
+                        port: env.PRODUCTION_PORT ?: '9090',
+                        imageName: IMAGE_NAME,
+                        buildTag: BUILD_TAG,
+                        appType: APP_TYPE,
+                        useCompose: env.USE_COMPOSE == 'true',
+                        composeFile: "${APP_DIR}/${COMPOSE_FILE}",
+                        enableSwarm: env.ENABLE_DOCKER_SWARM == 'true',
+                        deploymentStrategy: DEPLOYMENT_STRATEGY,
+                        memoryLimit: DOCKER_MEMORY_LIMIT,
+                        cpuLimit: DOCKER_CPU_LIMIT,
+                        networkMode: DOCKER_NETWORK_MODE,
+                        healthCheckTimeout: HEALTH_CHECK_TIMEOUT,
+                        canaryPercentage: CANARY_PERCENTAGE,
+                        rollbackOnFailure: env.ROLLBACK_ON_FAILURE == 'true'
+                    )
+                }
+            }
+        }
+
+        stage('Generate Documentation') {
+            steps {
+                echo "📝 Generating pipeline documentation..."
+                script {
+                    def readmeContent = """
+# Jenkins Pipeline for ${env.APP_TYPE} Application
+
+## Overview
+This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} application, supporting both Dockerfile and Docker Compose workflows. It includes Docker BuildKit, multi-platform builds, security scanning, testing, and deployment with rolling, blue-green, or canary strategies.
+
+## Prerequisites
+- **Jenkins Plugins**: Pipeline, GitHub, Docker, Slack Notification, Cobertura
+- **Tools**: Docker, docker-compose, trivy, truffleHog3, sonar-scanner (optional), semgrep (optional), cosign (optional)
+- **Credentials**: 'dockerhub-credentials' in Jenkins for Docker Hub access
+- **Configuration**: Create a `pipeline-config.yml` in the project root:
+  ```yaml
+  appType: ${env.APP_TYPE}
+  appPort: ${env.APP_PORT}
+  testPort: ${env.TEST_PORT}
+  appDir: ${env.APP_DIR}
+  composeFile: ${env.COMPOSE_FILE}
+  useCompose: ${env.USE_COMPOSE}
+  deploymentStrategy: ${env.DEPLOYMENT_STRATEGY}
+  ```
+
+## Stages
+1. **Initialize Configuration**: Loads `pipeline-config.yml` and validates Dockerfile or Docker Compose presence.
+2. **Docker Daemon Validation**: Verifies Docker daemon, BuildKit, and network configuration.
+3. **Tool Validation**: Checks for required tools (e.g., Docker, trivy).
+4. **Checkout & Setup**: Clones repository and installs dependencies based on app type.
+5. **Pre-Build Analysis**: Runs secrets scanning, SAST, and dependency checks (skipped for MySQL).
+6. **Docker Cache Optimization**: Manages Docker cache for efficient builds.
+7. **Advanced Docker Build**: Builds images with BuildKit, supports multi-arch and caching.
+8. **Docker Best Practices Validation**: Ensures Dockerfile follows best practices.
+9. **Comprehensive Testing**: Runs unit, integration, and performance tests (skipped for MySQL where applicable).
+10. **Docker Security Hardening**: Scans images for vulnerabilities with Trivy.
+11. **Push to Registry**: Pushes images to Docker Hub with appropriate tags.
+12. **Deploy to Staging**: Deploys to staging environment (develop branch).
+13. **Deploy to Production**: Deploys to production with manual approval (main branch).
+
+## Configuration Variables
+- `APP_TYPE`: Application type (node, python, java, go, mysql, generic)
+- `USE_COMPOSE`: Use Docker Compose (true/false)
+- `ENABLE_DOCKER_SWARM`: Enable Docker Swarm deployment (true/false)
+- `DEPLOYMENT_STRATEGY`: Deployment strategy (rolling, blue-green, canary)
+- `ENABLE_SECRETS_SCAN`, `ENABLE_SAST_SCAN`, `ENABLE_DEPENDENCY_SCAN`: Enable/disable scans
+- `MAX_CRITICAL_VULNERABILITIES`: Maximum allowed critical vulnerabilities
+- `PROMETHEUS_GATEWAY`: Prometheus push gateway URL
+
+## Artifacts
+- `build-metadata.json`: Build metadata
+- `secrets-report.json`, `sast-report.json`, `dependency-audit.json`: Security scan results
+- `image-layers.txt`, `sbom.json`, `image-vulnerabilities.json`: Docker build artifacts
+- `docker-stats.txt`, `image-sizes.txt`: Monitoring metrics
+
+## Monitoring
+- Metrics are sent to Prometheus if `ENABLE_METRICS` is true.
+- Tracing with Jaeger is supported if `ENABLE_TRACING` is true.
+
+## Troubleshooting
+- Check Jenkins logs for stage-specific errors.
+- Ensure `dockerhub-credentials` is configured in Jenkins.
+- Verify Docker daemon is running and accessible.
+- Review `pipeline-config.yml` for correct settings.
+
+## Customization
+- Add custom test scripts in `scripts/` directory (e.g., `integration-tests.sh`).
+- Modify `DEPLOYMENT_STRATEGY` for blue-green or canary deployments.
+- Adjust `COVERAGE_THRESHOLD`, `PERF_MAX_LATENCY_MS`, and `PERF_MAX_ERROR_RATE` for testing requirements.
+                    """
+                    writeFile file: 'README.md', text: readmeContent
+                }
+            }
+            post { always { archiveArtifacts artifacts: 'README.md', allowEmptyArchive: true } }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Cleaning up..."
+            script {
+                sh """
+                    docker stop ${TEST_CONTAINER_NAME} perf-${TEST_CONTAINER_NAME} || true
+                    docker rm ${TEST_CONTAINER_NAME} perf-${TEST_CONTAINER_NAME} || true
+                    if [ "${USE_COMPOSE}" = "true" ]; then
+                        docker-compose -f ${APP_DIR}/${COMPOSE_FILE} down --volumes || true
+                    fi
+                    docker system prune -f --filter "until=24h" || true
+                    docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" > docker-stats.txt
+                    docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep ${IMAGE_NAME} > image-sizes.txt
+                """
+                archiveArtifacts artifacts: 'build-metadata.json,*-report.json,*-logs.txt,docker-stats.txt,image-sizes.txt,README.md', allowEmptyArchive: true
+                if (env.ENABLE_METRICS == 'true') {
+                    dockerPipeline.sendMetrics(
+                        jobName: env.JOB_NAME,
+                        imageName: IMAGE_NAME,
+                        buildTag: BUILD_TAG,
+                        prometheusGateway: PROMETHEUS_GATEWAY,
+                        buildResult: currentBuild.result
+                    )
+                }
+            }
+        }
+
+        success {
+            echo "✅ Pipeline completed successfully!"
+            script {
+                if (env.SLACK_WEBHOOK_URL) {
+                    slackSend(color: 'good', message: "✅ ${env.APP_TYPE} Build #${env.BUILD_NUMBER} succeeded", channel: '#deployments')
+                }
+            }
+        }
+
+        failure {
+            echo "❌ Pipeline failed!"
+            script {
+                if (env.SLACK_WEBHOOK_URL) {
+                    slackSend(color: 'danger', message: "❌ ${env.APP_TYPE} Build #${env.BUILD_NUMBER} failed at ${env.STAGE_NAME}", channel: '#deployments')
+                }
+            }
+        }
+    }
+}

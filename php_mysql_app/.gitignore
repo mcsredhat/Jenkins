@@ -1,0 +1,206 @@
+# ===========================================
+# ENVIRONMENT AND SENSITIVE FILES
+# ===========================================
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+*.env
+
+# ===========================================
+# DOCKER VOLUMES AND DATA
+# ===========================================
+volumes/
+/volumes/*
+data/
+logs/
+*.log
+
+# ===========================================
+# DOCKER FILES
+# ===========================================
+# Uncomment if you want to ignore these
+# docker-compose.override.yml
+# Dockerfile.dev
+
+# ===========================================
+# DATABASE FILES
+# ===========================================
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+dump.sql
+backup.sql
+
+# ===========================================
+# PHP SPECIFIC
+# ===========================================
+# Dependencies
+vendor/
+composer.lock
+composer.phar
+
+# PHP logs and cache
+*.log
+cache/
+tmp/
+temp/
+
+# PHP session files
+sessions/
+
+# ===========================================
+# SYSTEM FILES
+# ===========================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ===========================================
+# IDE AND EDITOR FILES
+# ===========================================
+# Visual Studio Code
+.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PHPStorm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# ===========================================
+# BACKUP AND TEMPORARY FILES
+# ===========================================
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+*.orig
+*.rej
+
+# ===========================================
+# CERTIFICATES AND KEYS
+# ===========================================
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+ssl/
+certificates/
+keys/
+
+# ===========================================
+# CONFIGURATION FILES (if sensitive)
+# ===========================================
+config/database.php
+config/secrets.php
+config/production.php
+*.conf.local
+
+# ===========================================
+# DOCKER DEVELOPMENT
+# ===========================================
+# Development override files
+docker-compose.dev.yml
+docker-compose.local.yml
+docker-compose.test.yml
+
+# Docker build cache
+.dockerignore.local
+
+# ===========================================
+# ARCHIVES
+# ===========================================
+*.zip
+*.tar
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# ===========================================
+# PACKAGE MANAGERS
+# ===========================================
+# Node.js (if you use it for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Composer (PHP)
+/vendor/
+
+# ===========================================
+# RUNTIME DATA
+# ===========================================
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ===========================================
+# COVERAGE AND TESTING
+# ===========================================
+coverage/
+.coverage
+.nyc_output
+.phpunit.result.cache
+
+# ===========================================
+# PROJECT SPECIFIC
+# ===========================================
+# Add any project-specific files/folders here
+uploads/
+storage/
+public/uploads/
