@@ -1,10 +1,11 @@
 # Enhanced Pipeline Configuration
+# Note: appType refers to the primary service (php), but multiple services (php, mysql, adminer) are managed
 appType: php
 appName: php_mysql_app
 appDir: .
 composeFile: docker-compose.yml
 useCompose: true
-deploymentStrategy: rolling
+deploymentStrategy: rolling  # Must be one of: rolling, blue-green, canary
 
 # Service-specific Ports
 services:
@@ -15,7 +16,7 @@ services:
     appPort: 3306
     testPort: 3366
   adminer:
-    appPort: 8181
+    appPort: 8080  # Internal container port for Adminer
     testPort: 8181
 
 # Build Configuration
@@ -92,6 +93,7 @@ testing:
     duration: 60
 
 # Deployment Configuration
+# Note: Ensure MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD are set in .env
 deployment:
   environments:
     staging:
@@ -104,7 +106,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            path: "/health"
+            command: "curl -f http://localhost:8989/ || exit 1"
             timeout: 30
             interval: 10
         mysql:
@@ -114,7 +116,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            command: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
             timeout: 30
             interval: 10
         adminer:
@@ -124,7 +126,7 @@ deployment:
             memory: "512m"
             cpu: "0.25"
           healthcheck:
-            path: "curl -f http://localhost:8080 || exit 1"
+            command: "curl -f http://mysql-db:3306 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: false
@@ -138,7 +140,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            path: "/health"
+            command: "curl -f http://localhost:8989/ || exit 1"
             timeout: 30
             interval: 10
         mysql:
@@ -148,7 +150,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            command: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
             timeout: 30
             interval: 10
         adminer:
@@ -158,7 +160,7 @@ deployment:
             memory: "512m"
             cpu: "0.25"
           healthcheck:
-            path: "curl -f http://localhost:8080 || exit 1"
+            command: "curl -f http://mysql-db:3306 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: true
