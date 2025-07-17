@@ -19,7 +19,7 @@ pipeline {
 
         // Application Configuration
         GITHUB_REPO = "${env.GITHUB_REPO ?: 'https://github.com/mcsredhat/Jenkins'}"
-        APP_DIR = "${env.APP_DIR ?: '.'}"
+        APP_DIR = "${env.APP_DIR ?: 'php_mysql_app'}"
         COMPOSE_FILE = "${env.COMPOSE_FILE ?: 'docker-compose.yml'}"
         USE_COMPOSE = "${env.USE_COMPOSE ?: 'true'}"
         APP_TYPE = "${env.APP_TYPE ?: 'php'}"
