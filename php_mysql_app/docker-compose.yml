@@ -4,8 +4,8 @@ version: "3.8"
 services:
   php-apache:
     build:
-      context: .
-      dockerfile: php-apache/Dockerfile
+      context: ./php-apache
+      dockerfile: Dockerfile
       args:
         PHPVER: 8.1-apache
         PHP_USER_ID: 1100
@@ -17,7 +17,6 @@ services:
         MOUNT1: /php/data
         MOUNT2: /php/logs
         SHELL: /bin/bash
-        hostname: php-apache-host
         PHP_ENV: production
         VAR_RUN_PATH: /var/run/apache2
         CP_PHP_SRC: /php-apache/src
@@ -37,9 +36,10 @@ services:
       - "date-created=2025-06-20"
       - "version=8.1-apache"
     environment:
-      TZ: ${TIMEZONE}
+      TZ: ${TIMEZONE:-UTC}
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     networks:
       web-app-net:
         aliases:
@@ -69,7 +69,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 3
-      start_period: 16777216s
+      start_period: 60s
     logging:
       driver: json-file
       options:
@@ -92,7 +92,8 @@ services:
     image: adminer:latest
     container_name: adminer
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     ports:
       - "8181:8080"
     networks:
@@ -115,8 +116,8 @@ services:
 
   mysql-db:
     build:
-      context: .
-      dockerfile: mysql/Dockerfile
+      context: ./mysql
+      dockerfile: Dockerfile
       args:
         SQLVER: 8.0
         USER_ID: 1010
@@ -145,7 +146,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      TZ: ${TIMEZONE}
+      TZ: ${TIMEZONE:-UTC}
     networks:
       web-app-net:
         aliases:
