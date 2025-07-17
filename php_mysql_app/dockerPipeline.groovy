@@ -68,7 +68,7 @@ def runIntegrationTests(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:rootpass123!@#}" : 
                 args.appType == 'php' ? 
                 "curl -f http://localhost:${args.appPort}/health || exit 1" : 
                 "curl -f http://localhost:${args.appPort}/health || exit 1"
@@ -88,7 +88,9 @@ def runIntegrationTests(Map args) {
                 if [ "${args.appType}" = "mysql" ]; then
                     docker exec ${args.testContainerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}
                     docker exec ${args.testContainerName} mysql -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#} -e "SHOW DATABASES;"
-                elif [ "${args.appType}" = "php" ]; then
+                elif [ "${args.appType}" = "php" && !fileExists("${args.appDir}/tests/run-tests.php")) {
+                        error "❌ PHP integration test file tests/run-tests.php not found"
+                        } ]; then
                     docker exec ${args.testContainerName} php /var/www/html/tests/run-tests.php || echo "PHP tests completed"
                 else
                     ./scripts/integration-tests.sh ${args.testPort} || echo "Integration tests completed"

@@ -2,10 +2,10 @@ FROM php:8.1-apache
 
 # ARG variables
 ARG PHPVER=8.1-apache
-ARG USER_ID=1100
-ARG USER_NAME=www-data
-ARG GROUP_ID=1100
-ARG GROUP_NAME=www-data
+ARG PHP_USER_ID=1100
+ARG PHP_USER_NAME=www-data
+ARG PHP_GROUP_ID=1100
+ARG PHP_GROUP_NAME=www-data
 ARG DIR_PATH=/var/www/html/
 ARG APP_PORT=8989
 ARG MOUNT1=/php/data
@@ -13,7 +13,7 @@ ARG MOUNT2=/php/logs
 ARG SHELL=/bin/bash
 ARG hostname=php-apache-host
 ARG PHP_ENV=production
-ARG HEALTH_URL="curl -f http://localhost:8989"
+ARG HEALTH_URL="curl -f http://localhost:8989/health || exit 1"
 ARG VAR_RUN_PATH=/var/run/apache2
 ARG CP_PHP_SRC=/php-apache/src
 ARG CP_PHP_CFG=/php-apache/php-config
@@ -21,10 +21,10 @@ ARG CP_APACHE_CFG=/php-apache/apache-config
 ARG VAR_LOGS=/var/log/apache2
 
 # Create ENV variables
-ENV USER_NAME=${USER_NAME} \
-    USER_ID=${USER_ID} \
-    GROUP_ID=${GROUP_ID} \
-    GROUP_NAME=${GROUP_NAME} \
+ENV USER_NAME=${PHP_USER_NAME} \
+    USER_ID=${PHP_USER_ID} \
+    GROUP_ID=${PHP_GROUP_ID} \
+    GROUP_NAME=${PHP_GROUP_NAME} \
     DIR_PATH=${DIR_PATH} \
     APP_PORT=${APP_PORT} \
     MOUNT1_PATH=${MOUNT1} \
@@ -92,7 +92,7 @@ HEALTHCHECK --interval=30s \
     --timeout=15s \
     --start-period=60s \
     --retries=5 \
-    CMD curl -f http://localhost:${APP_PORT} || exit 1
+    CMD curl -f ${HEALTH_URL}
 
 # Expose port
 EXPOSE ${APP_PORT}

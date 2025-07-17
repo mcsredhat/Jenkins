@@ -10,10 +10,13 @@ deploymentStrategy: rolling
 services:
   php:
     appPort: 8989
-    testPort: 8989
+    testPort: 8383
   mysql:
     appPort: 3306
-    testPort: 3306
+    testPort: 3366
+  adminer:
+    appPort: 8181
+    testPort: 8181
 
 # Build Configuration
 build:
@@ -26,6 +29,13 @@ build:
     MYSQL_DATABASE: "${MYSQL_DATABASE}"
     MYSQL_USER: "${MYSQL_USER}"
     MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+    USER_ID: 1010
+    USER_NAME: sqluser
+    GROUP_ID: 1010
+    GROUP_NAME: sqlgroup
+    APP_DIR: /sqldb
+    MOUNT1: /sqldb/data
+    MOUNT2: /sqldb/logs
   cache:
     enabled: true
     layers: [ "dependencies", "build" ]

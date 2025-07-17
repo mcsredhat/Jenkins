@@ -7,10 +7,10 @@ services:
       dockerfile: php-apache/Dockerfile
       args:
         PHPVER: 8.1-apache
-        USER_ID: 1100
-        USER_NAME: phpapacheuser
-        GROUP_ID: 1100
-        GROUP_NAME: phpapachegrp
+        PHP_USER_ID: 1100
+        PHP_USER_NAME: phpapacheuser
+        PHP_GROUP_ID: 1100
+        PHP_GROUP_NAME: phpapachegrp
         DIR_PATH: /var/www/html/
         APP_PORT: 8989
         MOUNT1: /php/data
@@ -18,7 +18,7 @@ services:
         SHELL: /bin/bash
         hostname: php-apache-host
         PHP_ENV: production
-        HEALTH_URL: "curl -f http://localhost:8989"
+        HEALTH_URL: "curl -f http://localhost:8989/health || exit 1"
         VAR_RUN_PATH: /var/run/apache2
         CP_PHP_SRC: /php-apache/src
         CP_PHP_CFG: /php-apache/php-config
@@ -38,16 +38,17 @@ services:
       - "date-created=2025-06-20"
       - "version=8.1-apache"
     environment:
-      USER_NAME: phpapacheuser
-      USER_ID: 1100
-      GROUP_NAME: phpapachegrp
+      SQL_USER_NAME: phpapacheuser
+      SQL_USER_ID: 1100
+      SQL_GROUP_NAME: phpapachegrp
+      SQL_GROUP_ID: 1100
       DIR_PATH: /var/www/html/
       APP_PORT: 8989
       MOUNT1_PATH: /php/data
       MOUNT2_PATH: /php/logs
       SHELL_PATH: /bin/bash
       HOSTNAME: php-apache-host
-      HEALTH_URL: "curl -f http://localhost:8989"
+      HEALTH_URL: "curl -f http://localhost:8989/health || exit 1"
       VAR_RUN: /var/run/apache2
       VAR_LOGS: /var/log/apache2
       TZ: Europe/Paris
@@ -82,7 +83,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -f http://localhost:8989/health || exit 1"
+          "curl -f ${HEALTH_URL} "
         ]
       interval: 30s
       timeout: 15s
