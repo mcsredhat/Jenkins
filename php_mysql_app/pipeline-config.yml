@@ -48,7 +48,7 @@ build:
 # Security Configuration
 security:
   signing:
-    enabled: true
+    enabled: false
     keyId: "cosign-key"
   scanners:
     secrets:
