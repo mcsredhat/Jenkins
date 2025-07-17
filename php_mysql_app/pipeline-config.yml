@@ -5,7 +5,7 @@ appName: php_mysql_app
 appDir: .
 composeFile: docker-compose.yml
 useCompose: true
-deploymentStrategy: rolling  # Must be one of: rolling, blue-green, canary
+deploymentStrategy: rolling  # Must be one of: rolling, blue-green
 
 # Service-specific Ports
 services:
@@ -16,7 +16,7 @@ services:
     appPort: 3306
     testPort: 3366
   adminer:
-    appPort: 8080  # Internal container port for Adminer
+    appPort: 8181
     testPort: 8181
 
 # Build Configuration
@@ -37,6 +37,7 @@ build:
     APP_DIR: /sqldb
     MOUNT1: /sqldb/data
     MOUNT2: /sqldb/logs
+    BASH_SHELL: /bin/bash
   cache:
     enabled: true
     layers: [ "dependencies", "build" ]
@@ -86,7 +87,7 @@ testing:
       maxErrorRate: 0.01
     duration: 60
   contract:
-    enabled: false
+    enabled: true
     provider: "pact"
   chaos:
     enabled: false
@@ -116,7 +117,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            command: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            command: "mysqladmin ping -h localhost -u ${MYSQL_USER} --password=${MYSQL_PASSWORD}"
             timeout: 30
             interval: 10
         adminer:
@@ -126,7 +127,7 @@ deployment:
             memory: "512m"
             cpu: "0.25"
           healthcheck:
-            command: "curl -f http://mysql-db:3306 || exit 1"
+            command: "curl -f http://localhost:8080 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: false
@@ -150,7 +151,7 @@ deployment:
             memory: "1g"
             cpu: "0.5"
           healthcheck:
-            command: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            command: "mysqladmin ping -h localhost -u ${MYSQL_USER} --password=${MYSQL_PASSWORD}"
             timeout: 30
             interval: 10
         adminer:
@@ -160,7 +161,7 @@ deployment:
             memory: "512m"
             cpu: "0.25"
           healthcheck:
-            command: "curl -f http://mysql-db:3306 || exit 1"
+            command: "curl -f http://localhost:8080 || exit 1"
             timeout: 30
             interval: 10
       approvalRequired: true
@@ -172,12 +173,6 @@ deployment:
     bluegreen:
       testTrafficPercent: 10
       promotionTimeout: 300
-    canary:
-      steps: [ 10, 25, 50, 100 ]
-      stepInterval: 300
-      analysis:
-        enabled: true
-        metrics: [ "success_rate", "latency_p95" ]
 
 # Monitoring Configuration
 monitoring:
@@ -247,8 +242,8 @@ environments:
       scanners:
         vulnerabilities:
           thresholds:
-            critical: 5
-            high: 10
+            critical: 0
+            high: 5
   staging:
     testing:
       performance:
