@@ -13,6 +13,7 @@ def buildImage(Map args) {
         if (!env.DOCKER_USERNAME) {
             error "DOCKER_USERNAME environment variable is not set"
         }
+        def imageName = "${validateInput(args.imageName)}"
         def buildArgs = [
             "--build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "--build-arg VCS_REF=${env.GIT_COMMIT}",
@@ -44,7 +45,7 @@ def buildImage(Map args) {
             } else {
                 sh """
                     DOCKER_BUILDKIT=1 docker build ${platformArgs} ${cacheArgs} ${buildArgs} ${additionalArgs} \
-                        --tag ${validateInput(args.imageName)}:${validateInput(args.buildTag)} \
+                        --tag ${imageName} \
                         --tag ${validateInput(args.imageName)}:jenkins-build \
                         --tag ${validateInput(args.cacheFromImage)} \
                         --label "org.opencontainers.image.source=${validateInput(args.githubRepo)}" \
@@ -53,14 +54,15 @@ def buildImage(Map args) {
                         --progress=plain \
                         .
                     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \$(pwd):/workspace \
-                        aquasec/trivy:latest image --format spdx-json --output /workspace/sbom.json ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
+                        aquasec/trivy:latest image --format spdx-json --output /workspace/sbom.json ${imageName}
                 """
             }
 
             sh """
                 docker images ${validateInput(args.imageName)}* --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}"
-                docker history ${validateInput(args.imageName)}:${validateInput(args.buildTag)} --format "table {{.CreatedBy}}\t{{.Size}}" > image-layers.txt
+                docker history ${imageName} --format "table {{.CreatedBy}}\t{{.Size}}" > image-layers.txt
             """
+            env.IMAGE_NAME = imageName
         } catch (Exception e) {
             echo "❌ Build failed: ${e.getMessage()}"
             throw e
@@ -86,7 +88,7 @@ def runIntegrationTests(Map args) {
                 for service in \$SERVICES; do
                     docker-compose -f ${validateInput(args.composeFile)} ps \$service | grep "healthy" || echo "\$service not healthy"
                 done
-                docker-compose -f ${validateInput(args.composeFile)} exec -T app npm run test:integration || echo "Integration tests completed"
+                docker-compose -f ${validateInput(args.composeFile)} exec -T php-apache php /var/www/html/tests/run-tests.php || echo "Integration tests completed"
             """
         } else {
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
@@ -102,7 +104,7 @@ def runIntegrationTests(Map args) {
                     --health-interval=30s \
                     --health-timeout=10s \
                     --health-retries=3 \
-                    ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
+                    ${validateInput(args.imageName)}
                 timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${validateInput(args.testContainerName)} | grep -q "healthy"; do sleep 5; done'
                 if [ "${validateInput(args.appType)}" = "mysql" ]; then
                     docker exec ${validateInput(args.testContainerName)} mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}
@@ -141,7 +143,7 @@ def runIntegrationTests(Map args) {
 
 def pushToRegistry(Map args) {
     docker.withRegistry(validateInput(args.dockerRegistry), validateInput(args.credentialsId)) {
-        def image = docker.image("${validateInput(args.imageName)}:${validateInput(args.buildTag)}")
+        def image = docker.image("${validateInput(args.imageName)}")
         image.push()
         image.push("jenkins-latest")
         if (args.branchName == 'main') {
@@ -153,7 +155,7 @@ def pushToRegistry(Map args) {
         sh """
             curl -s -X GET https://registry.hub.docker.com/v2/repositories/${env.DOCKER_USERNAME}/${env.DOCKER_REPO}/tags/?page_size=100 | \
                 jq -r '.results[].name' > existing-tags.txt || echo "Failed to get tags"
-            docker manifest inspect ${validateInput(args.imageName)}:${validateInput(args.buildTag)} > registry-manifest.json || echo "Manifest not available"
+            docker manifest inspect ${validateInput(args.imageName)} > registry-manifest.json || echo "Manifest not available"
         """
     }
 }
@@ -222,7 +224,7 @@ def deployToEnvironment(Map args) {
                     --health-interval=30s \
                     --health-timeout=10s \
                     --health-retries=3 \
-                    ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
+                    ${validateInput(args.imageName)}
                 timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${containerName} | grep -q "healthy"; do sleep 5; done'
             """
         }
@@ -256,8 +258,8 @@ def deployToSwarm(Map args) {
             --publish ${validateInput(args.port)}:${validateInput(args.appPort)} \
             --constraint 'node.role == worker' \
             --label environment=${validateInput(args.environment)} \
-            ${validateInput(args.imageName)}:${validateInput(args.buildTag)} || \
-        docker service update --image ${validateInput(args.imageName)}:${validateInput(args.buildTag)} ${validateInput(args.serviceName)}
+            ${validateInput(args.imageName)} || \
+        docker service update --image ${validateInput(args.imageName)} ${validateInput(args.serviceName)}
         timeout 300s bash -c 'until [ "\$(docker service ls --filter name=${validateInput(args.serviceName)} --format "{{.Replicas}}" | cut -d/ -f1)" -eq "\$(docker service ls --filter name=${validateInput(args.serviceName)} --format "{{.Replicas}}" | cut -d/ -f2)" ]; do sleep 5; done'
     """
 }
@@ -292,7 +294,7 @@ def deployBlueGreen(Map args) {
                 --health-interval=30s \
                 --health-timeout=10s \
                 --health-retries=3 \
-                ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
+                ${validateInput(args.imageName)}
             timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${targetContainer} | grep -q "healthy"; do sleep 5; done'
             if [ -f scripts/update-loadbalancer.sh ]; then
                 ./scripts/update-loadbalancer.sh ${validateInput(args.environment)} ${targetPort}
@@ -320,7 +322,7 @@ def deployCanary(Map args) {
     def canaryPort = (args.port as Integer) + 10
 
     // Validate canary scripts exist
-    if (!fileExists('scripts/configure-canary.sh') || !fileExists('scripts/restore-production-traffic.sh')) {
+    if (!fileExists("${args.appDir}/scripts/configure-canary.sh") || !fileExists("${args.appDir}/scripts/restore-production-traffic.sh")) {
         error "Required canary scripts (scripts/configure-canary.sh, scripts/restore-production-traffic.sh) are missing"
     }
 
@@ -328,6 +330,11 @@ def deployCanary(Map args) {
         sh """
             cd ${validateInput(args.appDir)}
             ./scripts/configure-canary.sh ${validateInput(args.environment)} ${validateInput(args.port)} ${canaryPort} ${validateInput(args.canaryPercentage)}
+            docker-compose -f docker-compose.yml up -d
+            SERVICES=\$(docker-compose -f docker-compose.yml config --services)
+            for service in \$SERVICES; do
+                timeout ${validateInput(args.healthCheckTimeout)}s bash -c "until docker-compose -f docker-compose.yml ps \$service | grep -q 'healthy'; do sleep 5; done" || echo "\$service not healthy"
+            done
         """
         sleep 300
         sh """
@@ -338,8 +345,7 @@ def deployCanary(Map args) {
         echo "❌ Canary deployment failed: ${e.getMessage()}"
         sh """
             cd ${validateInput(args.appDir)}
-            docker-compose -f docker-compose-canary.yml down || true
-            rm -f docker-compose-canary.yml || true
+            docker-compose -f docker-compose.yml down || true
         """
         throw e
     }
