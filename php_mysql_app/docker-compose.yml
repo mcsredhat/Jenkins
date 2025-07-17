@@ -1,4 +1,4 @@
-# Ensure host volume directories exist before running: mkdir -p ./volumes/{php_data,php_logs,mysql_data,mysql_logs}
+# Ensure host volume directories exist before running: mkdir -p ${PHP_DATA_PATH} ${PHP_LOGS_PATH} ${MYSQL_DATA_PATH} ${MYSQL_LOGS_PATH}
 version: "3.8"
 
 services:
@@ -37,22 +37,13 @@ services:
       - "date-created=2025-06-20"
       - "version=8.1-apache"
     environment:
-      DIR_PATH: /var/www/html/
-      APP_PORT: 8989
-      MOUNT1_PATH: /php/data
-      MOUNT2_PATH: /php/logs
-      SHELL_PATH: /bin/bash
-      HOSTNAME: php-apache-host
-      VAR_RUN: /var/run/apache2
-      VAR_LOGS: /var/log/apache2
       TZ: ${TIMEZONE}
     depends_on:
       - mysql-db
     networks:
-      - web-app-net
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      web-app-net:
+        aliases:
+          - php-apache
     ports:
       - "8989:8989"
     volumes:
@@ -78,7 +69,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 16777216s
     logging:
       driver: json-file
       options:
@@ -103,12 +94,14 @@ services:
     depends_on:
       - mysql-db
     ports:
-      - "8181:8080"  # Maps host port 8181 to container port 8080 (Adminer's default)
+      - "8181:8080"
     networks:
-      - web-app-net
+      web-app-net:
+        aliases:
+          - adminer
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://mysql-db:3306 || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -154,10 +147,9 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       TZ: ${TIMEZONE}
     networks:
-      - web-app-net
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      web-app-net:
+        aliases:
+          - mysql
     ports:
       - "3306:3306"
     volumes:
@@ -179,11 +171,7 @@ services:
         soft: 1024
         hard: 4096
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root --password=\"${MYSQL_ROOT_PASSWORD}\" || exit 1"
-        ]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u ${MYSQL_USER} --password=\"${MYSQL_PASSWORD}\" || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 3
@@ -205,6 +193,8 @@ services:
     user: "1010:1010"
     restart: unless-stopped
     working_dir: /sqldb
+    env_file:
+      - .env
 
 volumes:
   php_data:
