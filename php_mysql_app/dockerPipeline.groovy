@@ -171,6 +171,9 @@ def deploy(Map args) {
             case 'blue-green':
                 deployBlueGreen(args)
                 break
+            case 'canary':
+                deployCanary(args)
+                break
             default:
                 deployToEnvironment(args)
                 break
@@ -312,42 +315,32 @@ def deployCanary(Map args) {
         args.appType == 'mysql' ? 
         "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
         "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
-    if (!fileExists('scripts/configure-canary.sh') || !fileExists('scripts/restore-production-traffic.sh')) {
-        error "Required canary scripts (scripts/configure-canary.sh, scripts/restore-production-traffic.sh) are missing"
-    }
     def canaryContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}-canary"
     def productionContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}"
     def canaryPort = (args.port as Integer) + 10
 
+    // Validate canary scripts exist
+    if (!fileExists('scripts/configure-canary.sh') || !fileExists('scripts/restore-production-traffic.sh')) {
+        error "Required canary scripts (scripts/configure-canary.sh, scripts/restore-production-traffic.sh) are missing"
+    }
+
     try {
-        def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
         sh """
-            docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
-            docker run -d \
-                --name ${canaryContainer} \
-                -p ${canaryPort}:${validateInput(args.appPort)} \
-                -e ENVIRONMENT=${validateInput(args.environment)} \
-                --memory=${validateInput(args.memoryLimit)} \
-                --cpus=${validateInput(args.cpuLimit)} \
-                --network=${networkMode} \
-                --health-cmd="${healthCmd}" \
-                --health-interval=30s \
-                --health-timeout=10s \
-                --health-retries=3 \
-                ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
-            timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${canaryContainer} | grep -q "healthy"; do sleep 5; done'
+            cd ${validateInput(args.appDir)}
             ./scripts/configure-canary.sh ${validateInput(args.environment)} ${validateInput(args.port)} ${canaryPort} ${validateInput(args.canaryPercentage)}
         """
         sleep 300
         sh """
-            docker stop ${productionContainer} || true
-            docker rm ${productionContainer} || true
-            docker rename ${canaryContainer} ${productionContainer}
+            cd ${validateInput(args.appDir)}
             ./scripts/restore-production-traffic.sh ${validateInput(args.environment)} ${validateInput(args.port)}
         """
     } catch (Exception e) {
         echo "❌ Canary deployment failed: ${e.getMessage()}"
-        sh "docker stop ${canaryContainer} || true; docker rm ${canaryContainer} || true"
+        sh """
+            cd ${validateInput(args.appDir)}
+            docker-compose -f docker-compose-canary.yml down || true
+            rm -f docker-compose-canary.yml || true
+        """
         throw e
     }
 }
@@ -375,6 +368,10 @@ def rollbackDeployment(Map args) {
                 export ENVIRONMENT=${validateInput(args.environment)}
                 export PORT=${validateInput(args.port)}
                 docker-compose -f ${validateInput(args.composeFile)} up -d --force-recreate
+                SERVICES=\$(docker-compose -f ${validateInput(args.composeFile)} config --services)
+                for service in \$SERVICES; do
+                    timeout ${validateInput(args.healthCheckTimeout)}s bash -c "until docker-compose -f ${validateInput(args.composeFile)} ps \$service | grep -q 'healthy'; do sleep 5; done" || echo "\$service not healthy"
+                done
             """
         } else {
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
