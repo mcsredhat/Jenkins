@@ -3,9 +3,9 @@ FROM php:8.1-apache
 # ARG variables
 ARG PHPVER=8.1-apache
 ARG USER_ID=1100
-ARG USER_NAME=phpapacheuser
+ARG USER_NAME=www-data
 ARG GROUP_ID=1100
-ARG GROUP_NAME=phpapachegrp
+ARG GROUP_NAME=www-data
 ARG DIR_PATH=/var/www/html/
 ARG APP_PORT=8989
 ARG MOUNT1=/php/data
@@ -55,8 +55,8 @@ RUN apt-get update && \
     docker-php-ext-install pdo_mysql && \
     mkdir -p ${VAR_RUN} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH} ${VAR_LOGS} && \
     touch ${VAR_LOGS}/php_errors.log && \
-    groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
-    useradd -u ${USER_ID} -M -g ${GROUP_NAME} -s ${SHELL_PATH} ${USER_NAME} && \
+    usermod -u ${USER_ID} www-data && \
+    groupmod -g ${GROUP_ID} www-data && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -69,12 +69,11 @@ COPY ${CP_PHP_CFG}/php.ini /usr/local/etc/php/php.ini
 COPY ${CP_PHP_SRC}/index.php ${DIR_PATH}/
 
 # Set proper ownership and permissions
-RUN chown -R ${USER_NAME}:${GROUP_NAME} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH} && \
+RUN chown -R www-data:www-data ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH} ${VAR_LOGS} && \
     chmod -R 755 ${DIR_PATH} && \
     chmod 755 ${MOUNT1_PATH} ${MOUNT2_PATH} && \
     chmod 644 /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && \
-    chmod 644 /usr/local/etc/php/php.ini && \
-    chown -R www-data:www-data ${VAR_LOGS}
+    chmod 644 /usr/local/etc/php/php.ini
 
 # Enable Apache modules
 RUN a2enmod rewrite headers expires deflate
@@ -93,15 +92,10 @@ HEALTHCHECK --interval=30s \
     --timeout=15s \
     --start-period=60s \
     --retries=5 \
-    CMD curl -f http://localhost:8080 || exit 1
+    CMD curl -f http://localhost:${APP_PORT} || exit 1
 
 # Expose port
 EXPOSE ${APP_PORT}
 
-# Create log directory and set permissions
-# RUN mkdir -p /var/log/apache2 && \
-#     touch /var/log/apache2/php_errors.log && \
-#     chown -R www-data:www-data /var/log/apache2
-
-# Run command (Apache runs as root initially, then drops privileges)
+# Run command
 CMD ["apache2-foreground"]

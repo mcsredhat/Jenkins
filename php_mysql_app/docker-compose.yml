@@ -40,7 +40,6 @@ services:
     environment:
       USER_NAME: phpapacheuser
       USER_ID: 1100
-      GROUP_ID: 1100
       GROUP_NAME: phpapachegrp
       DIR_PATH: /var/www/html/
       APP_PORT: 8989
@@ -48,7 +47,7 @@ services:
       MOUNT2_PATH: /php/logs
       SHELL_PATH: /bin/bash
       HOSTNAME: php-apache-host
-      HEALTH_URL: "curl -f http://localhost:8080"
+      HEALTH_URL: "curl -f http://localhost:8989"
       VAR_RUN: /var/run/apache2
       VAR_LOGS: /var/log/apache2
       TZ: Europe/Paris
@@ -83,7 +82,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -f http://localhost:8989 || exit 1"
+          "curl -f http://localhost:8989/health || exit 1"
         ]
       interval: 30s
       timeout: 15s
@@ -106,7 +105,7 @@ services:
       - DAC_OVERRIDE
       - FOWNER
       - FSETID
-    user: "1100:1100"  # Fixed to match USER_ID
+    user: "1100:1100"
     restart: unless-stopped
     working_dir: /var/www/html/
 
@@ -116,9 +115,9 @@ services:
     depends_on:
       - mysql-db
     ports:
-      - "8181:8888"
+      - "8181:8181"
     networks:
-      - web-app-net  # Fixed to use same network as other services
+      - web-app-net
     restart: unless-stopped
 
   mysql-db:
@@ -131,16 +130,17 @@ services:
         USER_NAME: sqluser
         GROUP_ID: 1010
         GROUP_NAME: sqlgroup
-        APP_PORT: 3366
+        APP_PORT: 3306
         APP_ENV: production
         BASH_SHELL: /bin/bash
         APP_DIR: /sqldb
         MOUNT1: /sqldb/data
         MOUNT2: /sqldb/logs
-        MYSQL_ROOT_PASSWORD: rootpass
-        MYSQL_DATABASE: mydb
-        MYSQL_PASSWORD: MyAppUserPass456
-        MYSQL_USER: sqluser
+        MYSQL_ROOT_PASSWORD: ${{MYSQL_ROOT_PASSWORD}}
+        MYSQL_DATABASE: ${{MYSQL_DATABASE}}
+        MYSQL_USER: ${{MYSQL_USER}}
+        MYSQL_PASSWORD: ${{MYSQL_PASSWORD}}
+
     container_name: mysql-project
     hostname: mysql-host
     labels:
@@ -149,29 +149,18 @@ services:
       - "service=database"
       - "tier=database"
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: mydb
-      MYSQL_USER: sqluser
-      MYSQL_PASSWORD: MyAppUserPass456
-      SQLVER: 8.0
-      USER_ID: "1010"
-      USER_NAME: sqluser
-      GROUP_ID: "1010"
-      GROUP_NAME: sqlgroup
-      APP_PORT: "3306"
-      APP_ENV: production
-      BASH_SHELL: /bin/bash
-      APP_DIR: /sqldb
-      MOUNT1: /sqldb/data
-      MOUNT2: /sqldb/logs
+      MYSQL_ROOT_PASSWORD: ${{MYSQL_ROOT_PASSWORD}}
+      MYSQL_DATABASE: ${{MYSQL_DATABASE}}
+      MYSQL_USER: ${{MYSQL_USER}}
+      MYSQL_PASSWORD: ${{MYSQL_PASSWORD}}
       TZ: Europe/Paris
     networks:
-      - web-app-net  # Fixed to use same network as other services
+      - web-app-net
     dns:
       - 1.1.1.1
       - 8.8.8.8
     ports:
-      - "3366:3366"
+      - "3306:3306"
     volumes:
       - mysql_data:/sqldb/data
       - mysql_logs:/sqldb/logs
@@ -194,7 +183,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root --password=\"$$MYSQL_ROOT_PASSWORD\" || exit 1"
+          "mysqladmin ping -h localhost -u root --password=\"${{MYSQL_ROOT_PASSWORD}}\" || exit 1"
         ]
       interval: 30s
       timeout: 15s

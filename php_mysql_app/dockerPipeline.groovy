@@ -68,7 +68,9 @@ def runIntegrationTests(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}" : 
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
+                args.appType == 'php' ? 
+                "curl -f http://localhost:${args.appPort}/health || exit 1" : 
                 "curl -f http://localhost:${args.appPort}/health || exit 1"
             sh """
                 docker run -d --name ${args.testContainerName} \
@@ -84,8 +86,10 @@ def runIntegrationTests(Map args) {
                     ${args.imageName}:${args.buildTag}
                 timeout ${args.healthCheckTimeout}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${args.testContainerName} | grep -q "healthy"; do sleep 5; done'
                 if [ "${args.appType}" = "mysql" ]; then
-                    docker exec ${args.testContainerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}
-                    docker exec ${args.testContainerName} mysql -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass} -e "SHOW DATABASES;"
+                    docker exec ${args.testContainerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}
+                    docker exec ${args.testContainerName} mysql -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#} -e "SHOW DATABASES;"
+                elif [ "${args.appType}" = "php" ]; then
+                    docker exec ${args.testContainerName} php /var/www/html/tests/run-tests.php || echo "PHP tests completed"
                 else
                     ./scripts/integration-tests.sh ${args.testPort} || echo "Integration tests completed"
                 fi
@@ -167,7 +171,7 @@ def deployToEnvironment(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}" : 
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
                 "curl -f http://localhost:${args.appPort}/health || exit 1"
             sh """
                 docker run -d \
@@ -189,7 +193,7 @@ def deployToEnvironment(Map args) {
             if [ "${args.appType}" != "mysql" ]; then
                 curl -f http://localhost:${args.port}/health || curl -f http://localhost:${args.port}/
             else
-                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}
+                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}
             fi
         """
     } catch (Exception e) {
@@ -228,7 +232,7 @@ def deployBlueGreen(Map args) {
 
     try {
         def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}" : 
+            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
             "curl -f http://localhost:${args.appPort}/health || exit 1"
         sh """
             docker run -d \
@@ -266,7 +270,7 @@ def deployCanary(Map args) {
 
     try {
         def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}" : 
+            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
             "curl -f http://localhost:${args.appPort}/health || exit 1"
         sh """
             docker run -d \
@@ -323,7 +327,7 @@ def rollbackDeployment(Map args) {
             """
         } else {
             def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass}" : 
+                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD:-rootpass123!@#}" : 
                 "curl -f http://localhost:${args.appPort}/health || exit 1"
             sh """
                 docker run -d \

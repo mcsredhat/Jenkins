@@ -16,12 +16,12 @@ pipeline {
 
         // Application Configuration
         GITHUB_REPO = "${env.GITHUB_REPO ?: 'https://github.com/mcsredhat/Jenkins'}"
-        APP_PORT = "${env.APP_PORT ?: '8383'}"
-        TEST_PORT = "${env.TEST_PORT ?: '9393'}"
+        APP_PORT = "${env.APP_PORT ?: '8989'}"
+        TEST_PORT = "${env.TEST_PORT ?: '8383'}"
         APP_DIR = "${env.APP_DIR ?: '.'}"
         COMPOSE_FILE = "${env.COMPOSE_FILE ?: 'docker-compose.yml'}"
-        USE_COMPOSE = "${env.USE_COMPOSE ?: 'false'}"
-        APP_TYPE = "${env.APP_TYPE ?: 'generic'}"
+        USE_COMPOSE = "${env.USE_COMPOSE ?: 'true'}"
+        APP_TYPE = "${env.APP_TYPE ?: 'php'}"
 
         // Docker Configuration
         DOCKER_BUILDKIT = "${env.DOCKER_BUILDKIT ?: '1'}"
@@ -104,15 +104,15 @@ pipeline {
                     if (fileExists(CONFIG_FILE)) {
                         def config = readYaml file: CONFIG_FILE
                         env.APP_TYPE = config.appType ?: env.APP_TYPE
-                        env.APP_PORT = config.appPort ?: env.APP_PORT
-                        env.TEST_PORT = config.testPort ?: env.TEST_PORT
+                        env.APP_PORT = config.services?.php?.appPort ?: env.APP_PORT
+                        env.TEST_PORT = config.services?.php?.testPort ?: env.TEST_PORT
                         env.APP_DIR = config.appDir ?: env.APP_DIR
                         env.COMPOSE_FILE = config.composeFile ?: env.COMPOSE_FILE
                         env.USE_COMPOSE = config.useCompose ?: env.USE_COMPOSE
                         env.DEPLOYMENT_STRATEGY = config.deploymentStrategy ?: env.DEPLOYMENT_STRATEGY
 
                         // Validate configuration
-                        if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic'].contains(config.appType)) {
+                        if (config.appType && !['node', 'python', 'java', 'go', 'mysql', 'generic', 'php'].contains(config.appType)) {
                             error "❌ Invalid appType '${config.appType}' in ${CONFIG_FILE}"
                         }
                     }
@@ -215,6 +215,8 @@ pipeline {
                             mvn dependency:resolve
                         elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
                             go mod download
+                        elif [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
+                            composer install --no-interaction --optimize-autoloader --no-dev
                         fi
                         mkdir -p .build-cache
                     """
@@ -305,6 +307,8 @@ pipeline {
                                         mvn org.owasp:dependency-check-maven:check -Dformat=json -DoutputDirectory=.. || echo "OWASP check completed"
                                     elif [ "${APP_TYPE}" = "go" ] && [ -f go.mod ]; then
                                         go list -json -m all | docker run --rm -i sonatypecommunity/nancy:latest > ../dependency-audit.json || echo "Nancy check completed"
+                                    elif [ "${APP_TYPE}" = "php" ] && [ -f composer.json ]; then
+                                        composer audit --format=json > ../dependency-audit.json || echo "Composer audit completed"
                                     fi
                                 """
                             } catch (Exception e) {
@@ -400,6 +404,7 @@ pipeline {
                                         "python") python -m pytest --cov=. --cov-report=xml --cov-report=html ;;
                                         "java") mvn test jacoco:report ;;
                                         "go") go test -v -cover -coverprofile=coverage.out ./... ;;
+                                        "php") php vendor/bin/phpunit --coverage-clover coverage.xml --log-junit test-results.xml ;;
                                         "generic") echo "No unit tests defined for generic app type" ;;
                                     esac
                                 """
@@ -630,8 +635,10 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
 - **Configuration**: Create a `pipeline-config.yml` in the project root:
   ```yaml
   appType: ${env.APP_TYPE}
-  appPort: ${env.APP_PORT}
-  testPort: ${env.TEST_PORT}
+  services:
+    php:
+      appPort: ${env.APP_PORT}
+      testPort: ${env.TEST_PORT}
   appDir: ${env.APP_DIR}
   composeFile: ${env.COMPOSE_FILE}
   useCompose: ${env.USE_COMPOSE}
@@ -654,7 +661,7 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
 13. **Deploy to Production**: Deploys to production with manual approval (main branch).
 
 ## Configuration Variables
-- `APP_TYPE`: Application type (node, python, java, go, mysql, generic)
+- `APP_TYPE`: Application type (node, python, java, go, mysql, php, generic)
 - `USE_COMPOSE`: Use Docker Compose (true/false)
 - `ENABLE_DOCKER_SWARM`: Enable Docker Swarm deployment (true/false)
 - `DEPLOYMENT_STRATEGY`: Deployment strategy (rolling, blue-green, canary)
@@ -704,35 +711,4 @@ This Jenkins pipeline automates the CI/CD process for a ${env.APP_TYPE} applicat
                     docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" > docker-stats.txt
                     docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep ${IMAGE_NAME} > image-sizes.txt
                 """
-                archiveArtifacts artifacts: 'build-metadata.json,*-report.json,*-logs.txt,docker-stats.txt,image-sizes.txt,README.md', allowEmptyArchive: true
-                if (env.ENABLE_METRICS == 'true') {
-                    dockerPipeline.sendMetrics(
-                        jobName: env.JOB_NAME,
-                        imageName: IMAGE_NAME,
-                        buildTag: BUILD_TAG,
-                        prometheusGateway: PROMETHEUS_GATEWAY,
-                        buildResult: currentBuild.result
-                    )
-                }
-            }
-        }
-
-        success {
-            echo "✅ Pipeline completed successfully!"
-            script {
-                if (env.SLACK_WEBHOOK_URL) {
-                    slackSend(color: 'good', message: "✅ ${env.APP_TYPE} Build #${env.BUILD_NUMBER} succeeded", channel: '#deployments')
-                }
-            }
-        }
-
-        failure {
-            echo "❌ Pipeline failed!"
-            script {
-                if (env.SLACK_WEBHOOK_URL) {
-                    slackSend(color: 'danger', message: "❌ ${env.APP_TYPE} Build #${env.BUILD_NUMBER} failed at ${env.STAGE_NAME}", channel: '#deployments')
-                }
-            }
-        }
-    }
-}
+                archiveArtifacts artifacts

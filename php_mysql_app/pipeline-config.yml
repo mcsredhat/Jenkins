@@ -1,21 +1,31 @@
 # Enhanced Pipeline Configuration
-appType: php # Application Type
-appName: php_mysql_app # Application Name
-appPort: 3000
-testPort: 3001
+appType: php
+appName: php_mysql_app
 appDir: .
 composeFile: docker-compose.yml
-useCompose: false
+useCompose: true
 deploymentStrategy: rolling
+
+# Service-specific Ports
+services:
+  php:
+    appPort: 8989
+    testPort: 8989
+  mysql:
+    appPort: 3306
+    testPort: 3306
 
 # Build Configuration
 build:
-  dockerfile: Dockerfile
   context: .
   target: production
   args:
-    NODE_ENV: production
-    BUILD_DATE: "${BUILD_DATE}"
+    PHPVER: 8.1-apache
+    SQLVER: 8.0
+    MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+    MYSQL_DATABASE: "${MYSQL_DATABASE}"
+    MYSQL_USER: "${MYSQL_USER}"
+    MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
   cache:
     enabled: true
     layers: [ "dependencies", "build" ]
@@ -76,26 +86,51 @@ deployment:
   environments:
     staging:
       enabled: true
-      port: 8088
-      replicas: 2
-      resources:
-        memory: "1Gi"
-        cpu: "500m"
-      healthcheck:
-        path: "/health"
-        timeout: 30
-        interval: 10
+      services:
+        php:
+          port: 8989
+          replicas: 2
+          resources:
+            memory: "1Gi"
+            cpu: "500m"
+          healthcheck:
+            path: "/health"
+            timeout: 30
+            interval: 10
+        mysql:
+          port: 3306
+          replicas: 1
+          resources:
+            memory: "1Gi"
+            cpu: "500m"
+          healthcheck:
+            path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            timeout: 30
+            interval: 10
+      approvalRequired: false
     production:
       enabled: true
-      port: 9090
-      replicas: 3
-      resources:
-        memory: "2Gi"
-        cpu: "1000m"
-      healthcheck:
-        path: "/health"
-        timeout: 30
-        interval: 10
+      services:
+        php:
+          port: 8989
+          replicas: 3
+          resources:
+            memory: "1Gi"
+            cpu: "500m"
+          healthcheck:
+            path: "/health"
+            timeout: 30
+            interval: 10
+        mysql:
+          port: 3306
+          replicas: 1
+          resources:
+            memory: "1Gi"
+            cpu: "500m"
+          healthcheck:
+            path: "mysqladmin ping -h localhost -u root --password=${MYSQL_ROOT_PASSWORD}"
+            timeout: 30
+            interval: 10
       approvalRequired: true
 
   strategies:
@@ -124,12 +159,10 @@ monitoring:
       type: "histogram"
     - name: "test_coverage"
       type: "gauge"
-
   tracing:
     enabled: false
     jaeger:
       endpoint: "http://jaeger:14268/api/traces"
-
   logging:
     level: "INFO"
     structured: true
@@ -142,14 +175,12 @@ notifications:
     channel: "#deployments"
     webhook: "${SLACK_WEBHOOK_URL}"
     events: [ "success", "failure", "unstable" ]
-
   email:
     enabled: false
     recipients: [ "team@company.com" ]
     smtp:
       server: "smtp.company.com"
       port: 587
-
   github:
     enabled: true
     token: "${GITHUB_TOKEN}"
@@ -158,15 +189,14 @@ notifications:
 # Resource Management
 resources:
   limits:
-    memory: "4Gi"
-    cpu: "2000m"
-  requests:
     memory: "1Gi"
     cpu: "500m"
-
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
   docker:
-    memory: "2g"
-    cpu: "2"
+    memory: "1g"
+    cpu: "0.5"
     storage: "10g"
 
 # Feature Flags
@@ -187,22 +217,11 @@ environments:
           thresholds:
             critical: 5
             high: 10
-
   staging:
-    deployment:
-      approvalRequired: false
     testing:
       performance:
         enabled: false
-
   production:
-    security:
-      signing:
-        required: true
-    deployment:
-      approvalRequired: true
     monitoring:
-      metrics:
-        enabled: true
       tracing:
         enabled: true

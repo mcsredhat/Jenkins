@@ -7,18 +7,17 @@ ARG USER_ID=1010
 ARG USER_NAME=sqluser
 ARG GROUP_ID=1010
 ARG GROUP_NAME=sqlgroup
-ARG APP_PORT=3366
+ARG APP_PORT=3306
 ARG APP_ENV=production
 ARG BASH_SHELL=/bin/bash
 ARG APP_DIR=/sqldb
 ARG MOUNT1=/sqldb/data
 ARG MOUNT2=/sqldb/logs
-ARG MYSQL_ROOT_PASSWORD=rootpass
-ARG MYSQL_DATABASE=mydb
-ARG MYSQL_PASSWORD=wppassword
+ARG MYSQL_ROOT_PASSWORD=rootpass123!@#
+ARG MYSQL_DATABASE=myappdb
+ARG MYSQL_PASSWORD=MyAppUserPass456!@#
 ARG MYSQL_USER=sqluser
-#ARG CP_SQL_CFG=mysql/config
-
+ARG CP_SQL_CFG=mysql/config
 
 # Set runtime environment variables from ARGs
 ENV SQLVER=${SQLVER} \
@@ -67,7 +66,7 @@ RUN chown ${USER_NAME}:${GROUP_NAME} /etc/mysql/conf.d/custom.cnf && \
     chmod 644 /docker-entrypoint-initdb.d/init.sql
 
 # Create volume mount points
-VOLUME ["${MOUNT1}", "${MOUNT2}", "/var/lib/mysql"]
+VOLUME ["${MOUNT1}", "${MOUNT2}"]
 
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -75,7 +74,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Switch to non-root user
 USER ${USER_NAME}
 
-# STOPSIGNAL (docker stop --signal=SIGTERM "container_id")
+# STOPSIGNAL
 STOPSIGNAL SIGTERM
 
 # Healthcheck
@@ -88,5 +87,5 @@ HEALTHCHECK --interval=30s \
 # Expose port
 EXPOSE ${APP_PORT}
 
-# Default command - use the official MySQL entrypoint
+# Default command
 CMD ["mysqld"]
