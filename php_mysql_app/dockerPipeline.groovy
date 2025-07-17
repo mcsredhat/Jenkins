@@ -1,9 +1,8 @@
 def validateInput(String input) {
-    // Basic sanitization to prevent command injection
-    if (input ==~ /[;&|<>]/) {
-        error "Invalid input detected: ${input}. Contains forbidden characters."
+    if (input ==~ /[;&|<>$"\\]/ || input.length() > 100) {
+        error "Invalid input detected: ${input}. Contains forbidden characters or is too long."
     }
-    return input
+    return input.trim()
 }
 
 def buildImage(Map args) {
@@ -35,9 +34,11 @@ def buildImage(Map args) {
                 sh """
                     DOCKER_BUILDKIT=1 docker-compose -f ${validateInput(args.composeFile)} build --parallel --progress=plain
                     docker-compose -f ${validateInput(args.composeFile)} config --services | while read service; do
-                        SERVICE_IMAGE=\$(docker-compose -f ${validateInput(args.composeFile)} config | grep "image:" | head -1 | awk '{print \$2}')
-                        docker tag \$SERVICE_IMAGE ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
-                        docker tag \$SERVICE_IMAGE ${validateInput(args.imageName)}:jenkins-build
+                        SERVICE_IMAGE=\$(docker-compose -f ${validateInput(args.composeFile)} config | grep -A1 "service: \$service" | grep "image:" | awk '{print \$2}')
+                        docker tag \$SERVICE_IMAGE ${validateInput(args.imageName)}-\$service:${validateInput(args.buildTag)}
+                        docker tag \$SERVICE_IMAGE ${validateInput(args.imageName)}-\$service:jenkins-build
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \$(pwd):/workspace \
+                            aquasec/trivy:latest image --format spdx-json --output /workspace/sbom-\$service.json \$SERVICE_IMAGE
                     done
                 """
             } else {
@@ -51,26 +52,31 @@ def buildImage(Map args) {
                         --label "org.opencontainers.image.version=${validateInput(args.buildTag)}" \
                         --progress=plain \
                         .
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \$(pwd):/workspace \
+                        aquasec/trivy:latest image --format spdx-json --output /workspace/sbom.json ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
                 """
             }
 
             sh """
-                docker images ${validateInput(args.imageName)}:${validateInput(args.buildTag)} --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}"
+                docker images ${validateInput(args.imageName)}* --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}"
                 docker history ${validateInput(args.imageName)}:${validateInput(args.buildTag)} --format "table {{.CreatedBy}}\t{{.Size}}" > image-layers.txt
-                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \$(pwd):/workspace \
-                    aquasec/trivy:latest image --format spdx-json --output /workspace/sbom.json ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
             """
         } catch (Exception e) {
             echo "❌ Build failed: ${e.getMessage()}"
             throw e
-        } finally {
-            sh "docker rmi ${validateInput(args.imageName)}:${validateInput(args.buildTag)} || true"
         }
     }
 }
 
 def runIntegrationTests(Map args) {
     try {
+        def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+        def healthCmd = config.deployment.environments.test?.services[args.appType]?.healthcheck?.command ?:
+            args.appType == 'mysql' ? 
+            "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+            args.appType == 'php' ? 
+            "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1" : 
+            "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
         if (args.useCompose) {
             sh """
                 cd ${validateInput(args.appDir)}
@@ -83,11 +89,6 @@ def runIntegrationTests(Map args) {
                 docker-compose -f ${validateInput(args.composeFile)} exec -T app npm run test:integration || echo "Integration tests completed"
             """
         } else {
-            def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
-                args.appType == 'php' ? 
-                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1" : 
-                "curl -f http://localhost:${validateInput(args.appPort)}/health || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
                 docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -104,8 +105,8 @@ def runIntegrationTests(Map args) {
                     ${validateInput(args.imageName)}:${validateInput(args.buildTag)}
                 timeout ${validateInput(args.healthCheckTimeout)}s bash -c 'until docker inspect --format="{{.State.Health.Status}}" ${validateInput(args.testContainerName)} | grep -q "healthy"; do sleep 5; done'
                 if [ "${validateInput(args.appType)}" = "mysql" ]; then
-                    docker exec ${validateInput(args.testContainerName)} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}
-                    docker exec ${validateInput(args.testContainerName)} mysql -u root --password=\${MYSQL_ROOT_PASSWORD} -e "SHOW DATABASES;"
+                    docker exec ${validateInput(args.testContainerName)} mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}
+                    docker exec ${validateInput(args.testContainerName)} mysql -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD} -e "SHOW DATABASES;"
                     docker exec ${validateInput(args.testContainerName)} mysql -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD} -e "SELECT 1;"
                 elif [ "${validateInput(args.appType)}" = "php" ]; then
                     if [ ! -f "${validateInput(args.appDir)}/tests/run-tests.php" ]; then
@@ -123,12 +124,16 @@ def runIntegrationTests(Map args) {
         currentBuild.result = 'UNSTABLE'
     } finally {
         if (args.useCompose) {
-            sh "docker-compose -f ${validateInput(args.composeFile)} down || true"
+            sh """
+                docker-compose -f ${validateInput(args.composeFile)} down || true
+                docker network rm web-app-net || true
+            """
         } else {
             sh """
                 docker logs ${validateInput(args.testContainerName)} > integration-test-logs.txt || true
                 docker stop ${validateInput(args.testContainerName)} || true
                 docker rm ${validateInput(args.testContainerName)} || true
+                docker network rm web-app-net || true
             """
         }
     }
@@ -154,15 +159,17 @@ def pushToRegistry(Map args) {
 }
 
 def deploy(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     if (args.enableSwarm) {
         deployToSwarm(args)
     } else {
         switch(args.deploymentStrategy) {
             case 'blue-green':
                 deployBlueGreen(args)
-                break
-            case 'canary':
-                deployCanary(args)
                 break
             default:
                 deployToEnvironment(args)
@@ -172,6 +179,11 @@ def deploy(Map args) {
 }
 
 def deployToEnvironment(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     def containerName = "${validateInput(args.appType)}-app-${validateInput(args.environment)}"
     try {
         sh """
@@ -193,9 +205,6 @@ def deployToEnvironment(Map args) {
                 done
             """
         } else {
-            def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
-                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
                 docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -218,7 +227,7 @@ def deployToEnvironment(Map args) {
             if [ "${validateInput(args.appType)}" != "mysql" ]; then
                 curl -f http://localhost:${validateInput(args.port)}/ || curl -f http://localhost:${validateInput(args.port)}/
             else
-                docker exec ${containerName} mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}
+                docker exec ${containerName} mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}
             fi
         """
     } catch (Exception e) {
@@ -231,6 +240,11 @@ def deployToEnvironment(Map args) {
 }
 
 def deployToSwarm(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     sh """
         docker swarm init || echo "Swarm already initialized"
         docker service create --name ${validateInput(args.serviceName)} \
@@ -246,6 +260,11 @@ def deployToSwarm(Map args) {
 }
 
 def deployBlueGreen(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     def blueContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}-blue"
     def greenContainer = "${validateInput(args.appType)}-app-${validateInput(args.environment)}-green"
     def currentPort = args.port as Integer
@@ -256,9 +275,6 @@ def deployBlueGreen(Map args) {
     def targetPort = currentActive ? greenPort : bluePort
 
     try {
-        def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
-            "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
         def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
         sh """
             docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -291,6 +307,11 @@ def deployBlueGreen(Map args) {
 }
 
 def deployCanary(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     if (!fileExists('scripts/configure-canary.sh') || !fileExists('scripts/restore-production-traffic.sh')) {
         error "Required canary scripts (scripts/configure-canary.sh, scripts/restore-production-traffic.sh) are missing"
     }
@@ -299,9 +320,6 @@ def deployCanary(Map args) {
     def canaryPort = (args.port as Integer) + 10
 
     try {
-        def healthCmd = args.appType == 'mysql' ? 
-            "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
-            "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
         def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
         sh """
             docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -335,6 +353,11 @@ def deployCanary(Map args) {
 }
 
 def rollbackDeployment(Map args) {
+    def config = readYaml file: "${args.appDir}/pipeline-config.yml"
+    def healthCmd = config.deployment.environments[args.environment]?.services[args.appType]?.healthcheck?.command ?:
+        args.appType == 'mysql' ? 
+        "mysqladmin ping -h localhost -u ${env.MYSQL_USER} --password=\${MYSQL_PASSWORD}" : 
+        "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
     def containerName = "${validateInput(args.appType)}-app-${validateInput(args.environment)}"
     try {
         def backupImages = sh(script: "docker images ${validateInput(args.imageName)} --format '{{.Tag}}' | grep '${validateInput(args.environment)}-backup-' | sort -r | head -1", returnStdout: true).trim()
@@ -351,12 +374,9 @@ def rollbackDeployment(Map args) {
                 cd ${validateInput(args.appDir)}
                 export ENVIRONMENT=${validateInput(args.environment)}
                 export PORT=${validateInput(args.port)}
-                docker-compose -f ${validateInput(args.composeFile)} up -d
+                docker-compose -f ${validateInput(args.composeFile)} up -d --force-recreate
             """
         } else {
-            def healthCmd = args.appType == 'mysql' ? 
-                "mysqladmin ping -h localhost -u root --password=\${MYSQL_ROOT_PASSWORD}" : 
-                "curl -f http://localhost:${validateInput(args.appPort)}/ || exit 1"
             def networkMode = args.useCompose ? "web-app-net" : validateInput(args.networkMode)
             sh """
                 docker network create web-app-net --subnet=172.18.19.0/24 || echo "Network web-app-net already exists"
@@ -382,13 +402,15 @@ def rollbackDeployment(Map args) {
 
 def sendMetrics(Map args) {
     try {
-        sh """
-            cat << EOF > docker-metrics.prom
+        retry(3) {
+            sh """
+                cat << EOF > docker-metrics.prom
 docker_build_duration_seconds{job="${validateInput(args.jobName)}",image="${validateInput(args.imageName)}",tag="${validateInput(args.buildTag)}"} ${currentBuild.duration / 1000}
 docker_build_result{job="${validateInput(args.jobName)}",image="${validateInput(args.imageName)}",tag="${validateInput(args.buildTag)}"} ${args.buildResult == 'SUCCESS' ? 1 : 0}
 EOF
-            curl -X POST ${validateInput(args.prometheusGateway)}/metrics/job/jenkins/instance/${validateInput(args.jobName)} --data-binary @docker-metrics.prom
-        """
+                curl -X POST ${validateInput(args.prometheusGateway)}/metrics/job/jenkins/instance/${validateInput(args.jobName)} --data-binary @docker-metrics.prom
+            """
+        }
     } catch (Exception e) {
         echo "⚠️ Failed to send metrics: ${e.getMessage()}"
     }
