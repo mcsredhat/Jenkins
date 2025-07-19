@@ -34,6 +34,7 @@ pipeline {
                     echo "Repository URL: ${GITHUB_REPO}"
                     echo "Working in directory: ${pwd()}"
                     echo "Application directory: ${APP_DIR}"
+                    sh "cd ${APP_DIR}"
                     sh "ls -la"
                     echo "Checking Docker environment..."
                     sh """
@@ -43,9 +44,9 @@ pipeline {
                     """
                     echo "Checking project structure..."
                     sh """
-                        ls -la ${APP_DIR}/mysql/ ${APP_DIR}/mysql/config  ${APP_DIR}/php-apache/ ${APP_DIR/}/php-apache/src ${APP_DIR}/php-apache/apache-config ${APP_DIR}/php-apache/php-config || echo 'Project directories not found'
+                        ls -la ./mysql/ ./mysql/config  ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Project directories not found'
                         ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
-                        ls -la ${APP_DIR}/mysql/Dockerfile ${APP_DIR/}/php-apache/Dockerfile || echo 'Dockerfiles not found'
+                        ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Dockerfiles not found'
                     """
                 }
             }
