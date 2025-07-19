@@ -48,6 +48,7 @@ pipeline {
                             ls -la ./mysql/ ./mysql/config ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Some project directories not found'
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
                             ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Some Dockerfiles not found'
+                            ls -la ./php-apache/src/index.php || echo 'index.php not found'
                         """
                     }
                 }
@@ -81,9 +82,9 @@ pipeline {
                             # Clean up unused containers and networks
                             docker container prune -f || true
                             docker network prune -f || true
-                            # Remove staging network to prevent conflicts
-                            docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
-                            # Inspect networks to identify potential conflicts
+                            # Remove all potential conflicting networks
+                            docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
+                            # Inspect remaining networks for debugging
                             echo "=== Existing Docker Networks Before Setup ==="
                             docker network ls
                             docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
@@ -127,11 +128,19 @@ pipeline {
                                     exit 1
                                 fi
                                 
+                                if [ ! -f php-apache/src/index.php ]; then
+                                    echo "Error: index.php file not found in php-apache/src/"
+                                    echo "Contents of php-apache/src/:"
+                                    ls -la php-apache/src/
+                                    exit 1
+                                fi
+                                
                                 grep -q "MYSQL_ROOT_PASSWORD=" .env || (echo "Error: MYSQL_ROOT_PASSWORD not found in .env" && exit 1)
                                 grep -q "MYSQL_DATABASE=" .env || (echo "Error: MYSQL_DATABASE not found in .env" && exit 1)
-                                grep -q "PHP_VERSION=" .env || (echo "Error: PHP_VERSION not found in .env" && exit 1)
+                                grep -q "MYSQL_USER=" .env || (echo "Error: MYSQL_USER not found in .env" && exit 1)
+                                grep -q "MYSQL_PASSWORD=" .env || (echo "Error: MYSQL_PASSWORD not found in .env" && exit 1)
                                 
-                                echo "Environment file validation passed"
+                                echo "Environment file and index.php validation passed"
                             """
                             
                             sh """
@@ -263,6 +272,7 @@ pipeline {
                         } finally {
                             sh """
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test down -v || true
+                                docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
                                 rm -f .env.test || true
                             """
                         }
@@ -426,8 +436,7 @@ pipeline {
                         docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker system prune -f --filter "until=24h" || true
                         docker network prune -f || true
-                        docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
-                        docker network rm php-mysql-app-production_web-app-net 2>/dev/null || echo "No production network to remove"
+                        docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
                         rm -f .env.test .env.staging .env.production || true
                     """
                 }
@@ -531,8 +540,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         
         sh """
             # Remove existing networks to avoid conflicts
-            docker network rm ${projectName}_web-app-net 2>/dev/null || echo "No existing ${environment} network to remove"
-            docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
+            docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
             docker compose -p ${projectName} --env-file .env.${environment} down -v || true
             # Clean up unused networks
             docker network prune -f || true
@@ -620,6 +628,8 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;" || echo "Could not retrieve MySQL user info"
             echo "=== PHP Application Files ==="
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache ls -la /var/www/html || echo "Could not list PHP application files"
+            echo "=== PHP Application Source ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
         """
         throw e
     }
