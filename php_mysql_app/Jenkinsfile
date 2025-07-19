@@ -63,7 +63,19 @@ pipeline {
                         sh """
                             # Create necessary directories as specified in .env
                             mkdir -p php-apache/src mysql ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs
-                            chmod 755 ./volumes ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs
+                            
+                            # Try to set permissions, but don't fail if it doesn't work
+                            chmod 755 ./volumes || echo "Warning: Could not set permissions on ./volumes"
+                            chmod 755 ./volumes/php_data || echo "Warning: Could not set permissions on php_data"
+                            chmod 755 ./volumes/php_logs || echo "Warning: Could not set permissions on php_logs" 
+                            chmod 755 ./volumes/mysql_data || echo "Warning: Could not set permissions on mysql_data"
+                            chmod 755 ./volumes/mysql_logs || echo "Warning: Could not set permissions on mysql_logs"
+                            
+                            # Alternative: Use Docker to create directories with correct permissions
+                            docker run --rm -v \$(pwd)/volumes:/volumes alpine:latest sh -c "
+                                chown -R 1000:1000 /volumes || echo 'Warning: Could not change ownership'
+                                chmod -R 755 /volumes || echo 'Warning: Could not change permissions'
+                            " || echo "Warning: Docker permission setup failed, continuing anyway"
                             
                             # Stop any existing containers
                             docker compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No compose services to stop"
