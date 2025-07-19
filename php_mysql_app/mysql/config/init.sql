@@ -6,14 +6,14 @@
 
 -- Grant additional privileges to the application user
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES
-ON `mydb`.* TO 'sqluser'@'%';
+ON `myappdb`.* TO 'sqluser'@'%';
 
 -- Create additional users if needed
 -- CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
 -- GRANT SELECT ON `mydb`.* TO 'readonly_user'@'%';
 
 -- Create some sample tables (optional)
-USE `mydb`;
+USE `myappdb`;
 
 -- Sample users table
 CREATE TABLE IF NOT EXISTS `users` (

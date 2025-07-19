@@ -1,36 +1,80 @@
 <?php
-// Database configuration
-$host = 'mysql-db';
-$db   = 'webappdb';
-$user = 'webuser';
-$pass = 'webpass';
+// Load environment variables if not available via $_ENV
+// This ensures compatibility with different PHP configurations
+if (!isset($_ENV['MYSQL_HOST'])) {
+    foreach (['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD'] as $var) {
+        $env_value = getenv($var);
+        if ($env_value !== false) {
+            $_ENV[$var] = $env_value;
+        }
+    }
+}
+
+// Database configuration with fallback values
+$db_host = $_ENV['MYSQL_HOST'] ?? 'mysql-db';
+$db_port = $_ENV['MYSQL_PORT'] ?? '3306';
+$db_name = $_ENV['MYSQL_DATABASE'] ?? 'myappdb';
+$db_user = $_ENV['MYSQL_USER'] ?? 'appuser';
+$db_pass = $_ENV['MYSQL_PASSWORD'] ?? 'MyAppUserPass456!@#';
+
+// Initialize variables
+$success_message = null;
+$error_message = null;
+$messages = [];
 
 try {
-    // Create PDO connection
-    $conn = new PDO("mysql:host=$host;dbname=$db", $user, $pass);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // Create PDO connection with proper DSN
+    $dsn = "mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=utf8mb4";
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ];
+    
+    $conn = new PDO($dsn, $db_user, $db_pass, $options);
     
     // Create table if it doesn't exist
     $conn->exec("CREATE TABLE IF NOT EXISTS messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        message TEXT,
+        message TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
     
     // Handle POST request to add message
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['message'])) {
-        $stmt = $conn->prepare("INSERT INTO messages (message) VALUES (:message)");
-        $stmt->bindParam(':message', $_POST['message']);
-        $stmt->execute();
+        $message = trim($_POST['message']);
+        if (!empty($message)) {
+            $stmt = $conn->prepare("INSERT INTO messages (message) VALUES (:message)");
+            $stmt->bindParam(':message', $message, PDO::PARAM_STR);
+            
+            if ($stmt->execute()) {
+                $success_message = "Message added successfully!";
+                // Redirect to prevent form resubmission
+                header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
+                exit;
+            } else {
+                $error_message = "Failed to add message. Please try again.";
+            }
+        } else {
+            $error_message = "Message cannot be empty.";
+        }
+    }
+    
+    // Check for success parameter from redirect
+    if (isset($_GET['success']) && $_GET['success'] == '1') {
         $success_message = "Message added successfully!";
     }
     
     // Fetch all messages
-    $stmt = $conn->query("SELECT * FROM messages ORDER BY created_at DESC");
-    $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $conn->query("SELECT * FROM messages ORDER BY created_at DESC LIMIT 50");
+    $messages = $stmt->fetchAll();
     
 } catch(PDOException $e) {
     $error_message = "Database connection failed: " . $e->getMessage();
+    error_log("Database Error: " . $e->getMessage());
+} catch(Exception $e) {
+    $error_message = "An unexpected error occurred: " . $e->getMessage();
+    error_log("General Error: " . $e->getMessage());
 }
 ?>
 
@@ -151,6 +195,12 @@ try {
             transform: translateY(-2px);
         }
         
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         .alert {
             padding: 15px;
             border-radius: 8px;
@@ -199,6 +249,7 @@ try {
         .message-content {
             color: #333;
             line-height: 1.6;
+            word-wrap: break-word;
         }
         
         .no-messages {
@@ -206,6 +257,20 @@ try {
             color: #6c757d;
             font-style: italic;
             padding: 40px;
+        }
+        
+        .debug-info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #495057;
+        }
+        
+        .debug-info h4 {
+            margin-bottom: 10px;
+            color: #343a40;
         }
         
         @media (max-width: 768px) {
@@ -262,9 +327,20 @@ try {
                 <div class="alert alert-error">
                     ❌ <?php echo htmlspecialchars($error_message); ?>
                 </div>
+                
+                <!-- Debug information for database connection issues -->
+                <div class="debug-info">
+                    <h4>🔧 Debug Information:</h4>
+                    <strong>Database Host:</strong> <?php echo htmlspecialchars($db_host); ?><br>
+                    <strong>Database Name:</strong> <?php echo htmlspecialchars($db_name); ?><br>
+                    <strong>Database Port:</strong> <?php echo htmlspecialchars($db_port); ?><br>
+                    <strong>Database User:</strong> <?php echo htmlspecialchars($db_user); ?><br>
+                    <strong>Environment Variables Available:</strong> 
+                    <?php echo isset($_ENV['MYSQL_HOST']) ? 'Yes' : 'No (using fallbacks)'; ?>
+                </div>
             <?php else: ?>
                 <div class="form-section">
-                    <form method="POST">
+                    <form method="POST" id="messageForm">
                         <div class="form-group">
                             <label for="message">💬 Add a New Message</label>
                             <textarea 
@@ -272,14 +348,15 @@ try {
                                 id="message" 
                                 placeholder="Share your thoughts, ideas, or just say hello..." 
                                 required
+                                maxlength="1000"
                             ></textarea>
                         </div>
-                        <button type="submit" class="btn">Send Message</button>
+                        <button type="submit" class="btn" id="submitBtn">Send Message</button>
                     </form>
                 </div>
                 
                 <div class="messages-section">
-                    <h2>📝 Recent Messages</h2>
+                    <h2>📝 Recent Messages (<?php echo count($messages); ?>)</h2>
                     <?php if (empty($messages)): ?>
                         <div class="no-messages">
                             <p>No messages yet. Be the first to share something!</p>
@@ -300,5 +377,34 @@ try {
             <?php endif; ?>
         </div>
     </div>
+
+    <script>
+        // Simple form validation and user experience enhancements
+        document.getElementById('messageForm')?.addEventListener('submit', function(e) {
+            const submitBtn = document.getElementById('submitBtn');
+            const message = document.getElementById('message').value.trim();
+            
+            if (!message) {
+                e.preventDefault();
+                alert('Please enter a message before submitting.');
+                return;
+            }
+            
+            // Disable button to prevent double submission
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Sending...';
+        });
+        
+        // Auto-hide success messages after 5 seconds
+        const successAlert = document.querySelector('.alert-success');
+        if (successAlert) {
+            setTimeout(() => {
+                successAlert.style.opacity = '0';
+                setTimeout(() => {
+                    successAlert.remove();
+                }, 300);
+            }, 5000);
+        }
+    </script>
 </body>
 </html>
