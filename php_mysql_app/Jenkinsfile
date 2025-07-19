@@ -191,12 +191,12 @@ pipeline {
                 echo "Running containerized tests with Docker Compose..."
                 script {
                     dir("${APP_DIR}") {
-                        def composeCmd = sh(
-                            script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                            returnStdout: true
-                        ).trim()
-                        
                         try {
+                            def composeCmd = sh(
+                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+                                returnStdout: true
+                            ).trim()
+                            
                             sh """
                                 cp .env .env.test
                                 
@@ -437,19 +437,15 @@ pipeline {
 
     post {
         always {
-            node {
-                echo "Cleaning up..."
-                script {
-                    // Define APP_DIR locally for post block
-                    def appDir = "php_mysql_app"
-                    dir(appDir) {
-                        sh """
-                            docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                            docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                            docker system prune -f --filter "until=24h" || true
-                            rm -f .env.test .env.staging .env.production || true
-                        """
-                    }
+            echo "Cleaning up..."
+            script {
+                dir("${APP_DIR}") {
+                    sh """
+                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        docker system prune -f --filter "until=24h" || true
+                        rm -f .env.test .env.staging .env.production || true
+                    """
                 }
             }
         }
@@ -536,7 +532,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             
             sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass_${environment}/' .env.${environment}
             sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=mydb_${environment}/' .env.${environment}
-            sed -i 's/MYSQL_USER=.*/MYSQL_USER=appuser_${environment}/' .env.${environment}
+            sed -i 's/MYSQL_USER=.*/MYSQL_USER=sqluser_${environment}/' .env.${environment}
             sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=MyAppUserPass456_${environment}/' .env.${environment}
             sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
             sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=${mysqlPort}/' .env.${environment}
@@ -581,15 +577,15 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
                 COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
                 
                 # Verify MySQL user creation
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host FROM mysql.user WHERE User='appuser_${environment}';" || {
-                    echo "User 'appuser_${environment}' not found. Dumping MySQL user info:"
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host FROM mysql.user WHERE User='sqluser_${environment}';" || {
+                    echo "User 'sqluser_${environment}' not found. Dumping MySQL user info:"
                     COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
                     exit 1
                 }
                 
                 # Test connection with application user
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uappuser_${environment} -pMyAppUserPass456_${environment} -h mysql-db -e "USE mydb_${environment}; SELECT 1;" || {
-                    echo "Failed to connect with appuser_${environment}. Dumping MySQL user info:"
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -usqluser_${environment} -pMyAppUserPass456_${environment} -h mysql-db -e "USE mydb_${environment}; SELECT 1;" || {
+                    echo "Failed to connect with sqluser_${environment}. Dumping MySQL user info:"
                     COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
                     exit 1
                 }
