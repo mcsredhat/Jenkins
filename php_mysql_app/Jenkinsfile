@@ -26,7 +26,21 @@ pipeline {
         stage('Clean Workspace') {
             steps {
                 echo "Cleaning Jenkins workspace to avoid permission issues..."
-                deleteDir() // Clear the entire workspace before checkout
+                script {
+                    // Log workspace permissions before cleanup
+                    sh """
+                        ls -ld /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace directory not found"
+                        if [ -d /var/lib/jenkins/workspace/php_mysql_pipeline ]; then
+                            ls -l /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Cannot list workspace contents"
+                        fi
+                    """
+                    // Attempt to clear workspace
+                    deleteDir()
+                    // Verify workspace is clean
+                    sh """
+                        ls -la /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace is empty after cleanup"
+                    """
+                }
             }
         }
 
@@ -76,7 +90,7 @@ pipeline {
                             # Create necessary directories with correct permissions
                             mkdir -p volumes/php_data volumes/php_logs volumes/mysql_data volumes/mysql_logs
                             
-                            # Set permissions using the jenkins user (avoid sudo)
+                            # Set permissions using the jenkins user
                             chown -R \$(whoami):\$(whoami) volumes || echo "Warning: Could not change ownership of volumes directory"
                             chmod -R 755 volumes || echo "Warning: Could not set permissions on volumes directory"
                             
@@ -423,17 +437,19 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up..."
-            script {
-                // Define APP_DIR locally for post block
-                def appDir = "php_mysql_app"
-                dir(appDir) {
-                    sh """
-                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker system prune -f --filter "until=24h" || true
-                        rm -f .env.test .env.staging .env.production || true
-                    """
+            node {
+                echo "Cleaning up..."
+                script {
+                    // Define APP_DIR locally for post block
+                    def appDir = "php_mysql_app"
+                    dir(appDir) {
+                        sh """
+                            docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                            docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                            docker system prune -f --filter "until=24h" || true
+                            rm -f .env.test .env.staging .env.production || true
+                        """
+                    }
                 }
             }
         }
@@ -586,41 +602,3 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
                     COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
                     exit 1
                 }
-                curl -f http://localhost:${adminerPort}/ || {
-                    echo "Adminer interface test failed. Dumping container logs:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs adminer
-                    exit 1
-                }
-                echo "=== Service Status ==="
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
-            """
-        }
-        
-        echo "Successfully deployed to ${environment}"
-        echo "PHP Application: http://localhost:${phpPort}"
-        echo "Adminer: http://localhost:${adminerPort}"
-        echo "MySQL Connection: mysql -h127.0.0.1 -P${mysqlPort} -uroot -prootpass_${environment}"
-        
-    } catch (Exception e) {
-        echo "Deployment to ${environment} failed: ${e.getMessage()}"
-        sh """
-            echo "=== Service Logs ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs || echo "No logs available"
-            echo "=== Service Status ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
-            echo "=== Existing Docker Networks ==="
-            docker network ls
-            docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
-                echo "Network: \$name, ID: \$id"
-                docker network inspect \$id || echo "Failed to inspect network \$name"
-            done
-            echo "=== MySQL User Info ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;" || echo "Could not retrieve MySQL user info"
-            echo "=== PHP Application Files ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache ls -la /var/www/html || echo "Could not list PHP application files"
-            echo "=== PHP Application Source ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
-        """
-        throw e
-    }
-}
