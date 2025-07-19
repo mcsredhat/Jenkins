@@ -1,6 +1,7 @@
+
 FROM php:8.1-apache
 
-# ARG variables (removed sensitive defaults for security)
+# ARG variables
 ARG PHP_VERSION=8.1-apache
 ARG PHP_USER_ID=1100
 ARG PHP_USER_NAME=phpapacheuser
@@ -71,8 +72,6 @@ RUN apt-get update && \
 COPY ${CP_APACHE_CFG}/ports.conf /etc/apache2/ports.conf
 COPY ${CP_APACHE_CFG}/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY ${CP_PHP_CFG}/php.ini /usr/local/etc/php/php.ini
-# COPY volumes/php_data ${DIR_PATH}/volumes/php_data
-# COPY volumes/php_logs ${DIR_PATH}/volumes/php_logs
 
 # Copy application source files
 COPY ${CP_SRC}/index.php ${DIR_PATH}/
@@ -107,5 +106,6 @@ HEALTHCHECK --interval=30s \
 # Expose port
 EXPOSE ${APP_PORT}
 
-# Run command (Apache runs as root initially, then drops privileges)
+# Run command
 CMD ["apache2-foreground"]
+```
