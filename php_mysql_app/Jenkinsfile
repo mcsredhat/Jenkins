@@ -23,6 +23,18 @@ pipeline {
     }
 
     stages {
+        stage('Validate Docker Environment') {
+            steps {
+                script {
+                    echo "Validating Docker and Docker Compose availability..."
+                    sh """
+                        docker --version || { echo "Error: Docker not found"; exit 1; }
+                        docker compose version 2>/dev/null || docker-compose --version 2>/dev/null || { echo "Error: Neither docker compose nor docker-compose found"; exit 1; }
+                    """
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 echo "Checking out code from GitHub repository..."
@@ -141,9 +153,7 @@ pipeline {
                                     docker tag \$PHP_IMAGE ${IMAGE_NAME}:latest
                                     echo "Tagged PHP image: \$PHP_IMAGE -> ${IMAGE_NAME}:${BUILD_TAG}"
                                 else
-                                    echo "Warning: Could
-
- not find PHP image to tag"
+                                    echo "Warning: Could not find PHP image to tag"
                                     echo "Available images:"
                                     docker images | grep "${COMPOSE_PROJECT_NAME}"
                                 fi
@@ -318,6 +328,10 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         try {
+                            def composeCmd = sh(
+                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+                                returnStdout: true
+                            ).trim()
                             try {
                                 docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
                                     def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
@@ -402,9 +416,12 @@ pipeline {
             echo "Cleaning up..."
             script {
                 dir("${APP_DIR}") {
+                    def composeCmd = sh(
+                        script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+                        returnStdout: true
+                    ).trim()
                     sh """
-                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        ${composeCmd} -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker system prune -f --filter "until=24h" || true
                         rm -f .env.test .env.staging .env.production || true
                     """
@@ -456,7 +473,7 @@ pipeline {
                                 Job: ${env.JOB_NAME}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
                                 Application Directory: ${APP_DIR}
-                                Build Allies: ${env.BUILD_URL}
+                                Build URL: ${env.BUILD_URL}
 
                                 Please check the console output for details:
                                 ${env.BUILD_URL}console
@@ -504,11 +521,11 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         """
         
         sh """
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} down -v || true
+            ${composeCmd} -p ${projectName} --env-file .env.${environment} down -v || true
         """
         
         sh """
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} up -d --build
+            ${composeCmd} -p ${projectName} --env-file .env.${environment} up -d --build
         """
         
         echo "Waiting for deployment to stabilize..."
@@ -518,11 +535,11 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         retry(15) {
             sleep(10)
             sh """
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h 127.0.0.1 -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
+                ${composeCmd} -p ${projectName} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h 127.0.0.1 -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
                 curl -f http://localhost:${phpPort}/ || exit 1
                 curl -f http://localhost:${adminerPort}/ || exit 1
                 echo "=== Service Status ==="
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
+                ${composeCmd} -p ${projectName} --env-file .env.${environment} ps
             """
         }
         
@@ -536,9 +553,9 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         echo "Checking what went wrong..."
         sh """
             echo "=== Service Logs ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs || echo "No logs available"
+            ${composeCmd} -p ${projectName} --env-file .env.${environment} logs || echo "No logs available"
             echo "=== Service Status ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
+            ${composeCmd} -p ${projectName} --env-file .env.${environment} ps
         """
         throw e
     }
