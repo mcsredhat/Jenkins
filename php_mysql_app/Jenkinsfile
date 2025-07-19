@@ -346,3 +346,187 @@ pipeline {
                 }
             }
         }
+
+        stage('Push to Docker Hub') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                    environment name: 'ENABLE_DOCKER_PUSH', value: 'true'
+                    environment name: 'FORCE_BRANCH_MAIN', value: 'true'
+                    environment name: 'FORCE_BRANCH_DEVELOP', value: 'true'
+                }
+            }
+            steps {
+                echo "Pushing image to Docker Hub..."
+                script {
+                    dir("${APP_DIR}") {
+                        try {
+                            docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
+                                def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
+                                image.push()
+                                image.push("jenkins-latest")
+                                if (env.BRANCH_NAME == 'main' || env.FORCE_BRANCH_MAIN == 'true') {
+                                    image.push("production")
+                                    image.push("v1.0.0")
+                                } else if (env.BRANCH_NAME == 'develop' || env.FORCE_BRANCH_DEVELOP == 'true') {
+                                    image.push("staging")
+                                    image.push("develop-latest")
+                                }
+                                echo "Image pushed successfully with credentials"
+                            }
+                        } catch (Exception credError) {
+                            echo "Docker Hub credentials not found, attempting push without registry authentication..."
+                            sh """
+                                docker push ${IMAGE_NAME}:${BUILD_TAG} || echo "Push failed - check Docker Hub login"
+                                docker push ${IMAGE_NAME}:jenkins-latest || echo "Push failed - check Docker Hub login"
+                            """
+                            echo "Image push attempted (check Docker Hub for results)"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    environment name: 'ENABLE_STAGING_DEPLOY', value: 'true'
+                    environment name: 'FORCE_BRANCH_DEVELOP', value: 'true'
+                }
+            }
+            steps {
+                echo "Deploying to staging..."
+                script {
+                    dir("${APP_DIR}") {
+                        deployToEnvironment('staging', '8090', '3308', '8084')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                anyOf {
+                    branch 'main'
+                    environment name: 'ENABLE_PRODUCTION_DEPLOY', value: 'true'
+                    environment name: 'FORCE_BRANCH_MAIN', value: 'true'
+                }
+            }
+            steps {
+                script {
+                    dir("${APP_DIR}") {
+                        if (env.SKIP_PRODUCTION_APPROVAL != 'true') {
+                            try {
+                                timeout(time: 5, unit: 'MINUTES') {
+                                    input message: 'Deploy to production?', ok: 'Deploy'
+                                }
+                            } catch (Exception e) {
+                                echo "Production deployment approval timeout or skipped"
+                                return
+                            }
+                        }
+                        echo "Deploying to production..."
+                        deployToEnvironment('production', '8091', '3309', '8085')
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            node {
+                echo "Cleaning up..."
+                script {
+                    // Define APP_DIR locally for post block
+                    def appDir = "php_mysql_app"
+                    dir(appDir) {
+                        sh """
+                            docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                            docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                            docker system prune -f --filter "until=24h" || true
+                            rm -f .env.test .env.staging .env.production || true
+                        """
+                    }
+                }
+            }
+        }
+
+        success {
+            echo "Pipeline completed successfully!"
+            script {
+                try {
+                    if (env.EMAIL_CONFIGURED == 'true') {
+                        emailext(
+                            subject: "PHP-MySQL Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            body: """
+                                PHP-MySQL application build succeeded!
+
+                                Job: ${env.JOB_NAME}
+                                Build Number: ${env.BUILD_NUMBER}
+                                Branch: ${env.BRANCH_NAME ?: 'main'}
+                                Image: ${IMAGE_NAME}:${BUILD_TAG}
+                                Application Directory: ${APP_DIR}
+
+                                GitHub: ${GITHUB_REPO}
+                                Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
+                                Build URL: ${env.BUILD_URL}
+                            """,
+                            recipientProviders: [developers()]
+                        )
+                    } else {
+                        echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
+                    }
+                } catch (Exception e) {
+                    echo "Failed to send success email: ${e.getMessage()}"
+                }
+            }
+        }
+
+        failure {
+            echo "Pipeline failed!"
+            script {
+                try {
+                    if (env.EMAIL_CONFIGURED == 'true') {
+                        emailext(
+                            subject: "PHP-MySQL Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            body: """
+                                PHP-MySQL application build failed!
+
+                                Job: ${env.JOB_NAME}
+                                Branch: ${env.BRANCH_NAME ?: 'main'}
+                                Application Directory: ${APP_DIR}
+                                Build URL: ${env.BUILD_URL}
+
+                                Please check the console output for details:
+                                ${env.BUILD_URL}console
+                            """,
+                            recipientProviders: [developers(), requestor()]
+                        )
+                    } else {
+                        echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
+                    }
+                } catch (Exception e) {
+                    echo "Failed to send failure email: ${e.getMessage()}"
+                }
+            }
+        }
+
+        unstable {
+            echo "Pipeline completed with warnings."
+        }
+    }
+}
+
+def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
+    def projectName = "php-mysql-app-${environment}"
+    def composeCmd = sh(
+        script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+        returnStdout: true
+    ).trim()
+    
+    try {
+        echo "Deploying PHP-MySQL application to ${environment}"
+        echo "PHP Port: ${php
