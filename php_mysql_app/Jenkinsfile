@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -625,4 +624,3 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         throw e
     }
 }
-```
