@@ -1,3 +1,4 @@
+
 -- MySQL Initialization Script
 -- This script runs automatically when the container starts for the first time
 
@@ -6,7 +7,7 @@
 
 -- Grant additional privileges to the application user
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES
-ON `myappdb`.* TO 'sqluser'@'%';
+ON `myappdb`.* TO 'appuser'@'%';
 
 -- Create additional users if needed
 -- CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
@@ -52,3 +53,4 @@ FLUSH PRIVILEGES;
 
 -- Display success message
 SELECT 'Database initialization completed successfully!' AS message;
+```
