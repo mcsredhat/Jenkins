@@ -195,7 +195,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root --password=\"${MYSQL_ROOT_PASSWORD}\" || exit 1"
+          "mysqladmin ping -h mysql-db -u root --password=\"${MYSQL_ROOT_PASSWORD}\" || exit 1"
         ]
       interval: ${HEALTHCHECK_INTERVAL}
       timeout: ${HEALTHCHECK_TIMEOUT}
