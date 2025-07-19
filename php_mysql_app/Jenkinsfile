@@ -23,23 +23,7 @@ pipeline {
     }
 
     stages {
-        stage('Clean Workspace') {
-            steps {
-                echo "Cleaning Jenkins workspace to avoid permission issues..."
-                script {
-                    sh """
-                        ls -ld /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace directory not found"
-                        if [ -d /var/lib/jenkins/workspace/php_mysql_pipeline ]; then
-                            ls -l /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Cannot list workspace contents"
-                        fi
-                    """
-                    deleteDir()
-                    sh """
-                        ls -la /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace is empty after cleanup"
-                    """
-                }
-            }
-        }
+        
 
         stage('Checkout') {
             steps {
@@ -54,6 +38,7 @@ pipeline {
                     echo "Application directory: ${APP_DIR}"
                     
                     dir("${APP_DIR}") {
+                         sh "cd ${APP_DIR}"
                         sh "pwd && ls -la"
                         echo "Checking Docker environment..."
                         sh """
