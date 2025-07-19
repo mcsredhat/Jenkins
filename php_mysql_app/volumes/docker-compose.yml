@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  mysql-db:
+    image: mysql:8
+    container_name: mysql-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=webappdb
+      - MYSQL_USER=webuser
+      - MYSQL_PASSWORD=webpass
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - web-app-net
+
+  php-app:
+    build: .
+    container_name: php-app
+    depends_on:
+      - mysql-db
+    ports:
+      - "8080:80"
+    networks:
+      - web-app-net
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    depends_on:
+      - mysql-db
+    ports:
+      - "8081:8080"
+    networks:
+      - web-app-net
+
+volumes:
+  mysql-data:
+
+networks:
+  web-app-net:
