@@ -1,10 +1,11 @@
+
 version: "3.8"
 
 services:
   php-apache:
     build:
-      context: .
-      dockerfile: php-apache/Dockerfile
+      context: ./php-apache
+      dockerfile: Dockerfile
       args:
         PHP_VERSION: ${PHP_VERSION}
         PHP_USER_ID: ${PHP_USER_ID}
@@ -121,7 +122,32 @@ services:
         compress: ${LOG_COMPRESS}
 
   mysql-db:
-    image: mysql:8.0  # Use official image for reliability
+    build:
+      context: ./mysql
+      dockerfile: Dockerfile
+      args:
+        MYSQL_VERSION: ${MYSQL_VERSION}
+        MYSQL_USER_ID: ${MYSQL_USER_ID}
+        MYSQL_USER_NAME: ${MYSQL_USER_NAME}
+        MYSQL_GROUP_ID: ${MYSQL_GROUP_ID}
+        MYSQL_GROUP_NAME: ${MYSQL_GROUP_NAME}
+        MYSQL_APP_PORT: ${MYSQL_APP_PORT}
+        MYSQL_APP_ENV: ${MYSQL_APP_ENV}
+        MYSQL_BASH_SHELL: ${MYSQL_BASH_SHELL}
+        MYSQL_APP_DIR: ${MYSQL_APP_DIR}
+        MYSQL_MOUNT1: ${MYSQL_MOUNT1}
+        MYSQL_MOUNT2: ${MYSQL_MOUNT2}
+        MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+        MYSQL_DATABASE: ${MYSQL_DATABASE}
+        MYSQL_USER: ${MYSQL_USER}
+        MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+        CP_SQL_CFG: ${CP_SQL_CFG}
+        TZ: ${TZ}
+        MYSQL_CHARSET: ${MYSQL_CHARSET}
+        MYSQL_COLLATION: ${MYSQL_COLLATION}
+        MYSQL_LOWER_CASE_TABLE_NAMES: ${MYSQL_LOWER_CASE_TABLE_NAMES}
+        MYSQL_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS}
+        MYSQL_INNODB_BUFFER_POOL_SIZE: ${MYSQL_INNODB_BUFFER_POOL_SIZE}
     container_name: mysql-db
     hostname: mysql-host
     environment:
@@ -142,6 +168,11 @@ services:
       MOUNT1: ${MYSQL_MOUNT1}
       MOUNT2: ${MYSQL_MOUNT2}
       TZ: ${TZ}
+      MYSQL_CHARSET: ${MYSQL_CHARSET}
+      MYSQL_COLLATION: ${MYSQL_COLLATION}
+      MYSQL_LOWER_CASE_TABLE_NAMES: ${MYSQL_LOWER_CASE_TABLE_NAMES}
+      MYSQL_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS}
+      MYSQL_INNODB_BUFFER_POOL_SIZE: ${MYSQL_INNODB_BUFFER_POOL_SIZE}
     networks:
       - web-app-net
     dns:
@@ -227,3 +258,4 @@ networks:
     ipam:
       config:
         - subnet: ${NETWORK_SUBNET}
+```
