@@ -1,4 +1,3 @@
-# Base image - corrected to use official MySQL image
 FROM mysql:8.0
 
 # Build-time variables
@@ -66,13 +65,10 @@ RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} && \
     chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2}
 
-# Copy MySQL configuration files (only if they exist)
-# COPY --chown=${USER_NAME}:${GROUP_NAME} mysql/config/my.cnf /etc/mysql/conf.d/custom.cnf || true
-# COPY --chown=${USER_NAME}:${GROUP_NAME} mysql/config/init.sql /docker-entrypoint-initdb.d/ || true
+# Copy MySQL configuration files
 COPY mysql/config/my.cnf /etc/mysql/conf.d/custom.cnf
 COPY mysql/config/init.sql /docker-entrypoint-initdb.d/
-# COPY volumes/mysql_data ${APP_DIR}/volumes/mysql_data 
-# COPY volumes/mysql_logs ${APP_DIR}/volumes/mysql_logs
+
 # Set proper permissions for config files
 RUN chown ${USER_NAME}:${GROUP_NAME} /etc/mysql/conf.d/custom.cnf && \
     chmod 644 /etc/mysql/conf.d/custom.cnf && \
@@ -88,7 +84,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Switch to non-root user
 USER ${USER_NAME}
 
-# STOPSIGNAL (docker stop --signal=SIGTERM "container_id")
+# STOPSIGNAL
 STOPSIGNAL SIGTERM
 
 # Healthcheck
@@ -101,5 +97,5 @@ HEALTHCHECK --interval=30s \
 # Expose port
 EXPOSE ${APP_PORT}
 
-# Default command - use the official MySQL entrypoint
+# Default command
 CMD ["mysqld"]
