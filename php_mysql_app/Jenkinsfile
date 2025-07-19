@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -23,7 +24,23 @@ pipeline {
     }
 
     stages {
-        
+        stage('Clean Workspace') {
+            steps {
+                echo "Cleaning Jenkins workspace to avoid permission issues..."
+                script {
+                    sh """
+                        ls -ld /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace directory not found"
+                        if [ -d /var/lib/jenkins/workspace/php_mysql_pipeline ]; then
+                            ls -l /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Cannot list workspace contents"
+                        fi
+                    """
+                    deleteDir()
+                    sh """
+                        ls -la /var/lib/jenkins/workspace/php_mysql_pipeline || echo "Workspace is empty after cleanup"
+                    """
+                }
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -38,7 +55,6 @@ pipeline {
                     echo "Application directory: ${APP_DIR}"
                     
                     dir("${APP_DIR}") {
-                         sh "cd ${APP_DIR}"
                         sh "pwd && ls -la"
                         echo "Checking Docker environment..."
                         sh """
@@ -397,10 +413,13 @@ pipeline {
         always {
             echo "Cleaning up..."
             script {
-                dir("${APP_DIR}") {
+                // Define APP_DIR locally to avoid MissingPropertyException
+                def appDir = env.APP_DIR ?: 'php_mysql_app'
+                def testComposeProjectName = env.TEST_COMPOSE_PROJECT_NAME ?: "php-mysql-test-${env.BUILD_NUMBER}"
+                dir(appDir) {
                     sh """
-                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        docker compose -p ${testComposeProjectName} down -v || true
+                        docker-compose -p ${testComposeProjectName} down -v || true
                         docker system prune -f --filter "until=24h" || true
                         rm -f .env.test .env.staging .env.production || true
                     """
@@ -421,7 +440,7 @@ pipeline {
                                 Build Number: ${env.BUILD_NUMBER}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
                                 Image: ${IMAGE_NAME}:${BUILD_TAG}
-                                Application Directory: ${APP_DIR}
+                                Application Directory: ${env.APP_DIR}
                                 GitHub: ${GITHUB_REPO}
                                 Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
                                 Build URL: ${env.BUILD_URL}
@@ -448,7 +467,7 @@ pipeline {
                                 PHP-MySQL application build failed!
                                 Job: ${env.JOB_NAME}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
-                                Application Directory: ${APP_DIR}
+                                Application Directory: ${env.APP_DIR}
                                 Build URL: ${env.BUILD_URL}
                                 Please check the console output for details:
                                 ${env.BUILD_URL}console
