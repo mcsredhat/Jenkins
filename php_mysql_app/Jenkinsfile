@@ -81,6 +81,8 @@ pipeline {
                             # Clean up unused containers and networks
                             docker container prune -f || true
                             docker network prune -f || true
+                            # Remove staging network to prevent conflicts
+                            docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
                             # Inspect networks to identify potential conflicts
                             echo "=== Existing Docker Networks Before Setup ==="
                             docker network ls
@@ -424,6 +426,8 @@ pipeline {
                         docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker system prune -f --filter "until=24h" || true
                         docker network prune -f || true
+                        docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
+                        docker network rm php-mysql-app-production_web-app-net 2>/dev/null || echo "No production network to remove"
                         rm -f .env.test .env.staging .env.production || true
                     """
                 }
@@ -526,10 +530,11 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         """
         
         sh """
-            # Remove any existing network to avoid conflicts
-            docker network rm ${projectName}_web-app-net 2>/dev/null || echo "No existing network to remove"
+            # Remove existing networks to avoid conflicts
+            docker network rm ${projectName}_web-app-net 2>/dev/null || echo "No existing ${environment} network to remove"
+            docker network rm php-mysql-app-staging_web-app-net 2>/dev/null || echo "No staging network to remove"
             docker compose -p ${projectName} --env-file .env.${environment} down -v || true
-            # Clean up unused networks to prevent subnet conflicts
+            # Clean up unused networks
             docker network prune -f || true
             # Inspect remaining networks for debugging
             echo "=== Existing Docker Networks Before Deployment ==="
