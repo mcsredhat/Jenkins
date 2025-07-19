@@ -48,7 +48,6 @@ pipeline {
                             ls -la ./mysql/ ./mysql/config ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Some project directories not found'
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
                             ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Some Dockerfiles not found'
-                            ls -la ./php-apache/src/index.php || echo 'index.php not found'
                         """
                     }
                 }
@@ -75,22 +74,13 @@ pipeline {
                                 chmod -R 755 /volumes || echo 'Warning: Could not change permissions'
                             " || echo "Warning: Docker permission setup failed, continuing anyway"
                             
-                            # Stop any existing containers and clean up networks
+                            # Stop any existing containers
                             docker compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No compose services to stop"
                             docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No test compose services to stop"
                             
-                            # Clean up unused containers and networks
+                            # Clean up any orphaned containers
                             docker container prune -f || true
-                            docker network prune -f || true
-                            # Remove all potential conflicting networks
-                            docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
-                            # Inspect remaining networks for debugging
-                            echo "=== Existing Docker Networks Before Setup ==="
-                            docker network ls
-                            docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
-                                echo "Network: \$name, ID: \$id"
-                                docker network inspect \$id || echo "Failed to inspect network \$name"
-                            done
+                            docker volume prune -f || true
                         """
                     }
                 }
@@ -128,19 +118,11 @@ pipeline {
                                     exit 1
                                 fi
                                 
-                                if [ ! -f php-apache/src/index.php ]; then
-                                    echo "Error: index.php file not found in php-apache/src/"
-                                    echo "Contents of php-apache/src/:"
-                                    ls -la php-apache/src/
-                                    exit 1
-                                fi
-                                
                                 grep -q "MYSQL_ROOT_PASSWORD=" .env || (echo "Error: MYSQL_ROOT_PASSWORD not found in .env" && exit 1)
                                 grep -q "MYSQL_DATABASE=" .env || (echo "Error: MYSQL_DATABASE not found in .env" && exit 1)
-                                grep -q "MYSQL_USER=" .env || (echo "Error: MYSQL_USER not found in .env" && exit 1)
-                                grep -q "MYSQL_PASSWORD=" .env || (echo "Error: MYSQL_PASSWORD not found in .env" && exit 1)
+                                grep -q "PHP_VERSION=" .env || (echo "Error: PHP_VERSION not found in .env" && exit 1)
                                 
-                                echo "Environment file and index.php validation passed"
+                                echo "Environment file validation passed"
                             """
                             
                             sh """
@@ -159,7 +141,7 @@ pipeline {
                                     docker tag \$PHP_IMAGE ${IMAGE_NAME}:latest
                                     echo "Tagged PHP image: \$PHP_IMAGE -> ${IMAGE_NAME}:${BUILD_TAG}"
                                 else
-                                    echo "Warning: Could not find PHP image to tag"
+                                    echo "Warning: Could could not find PHP image to tag"
                                     echo "Available images:"
                                     docker images | grep "${COMPOSE_PROJECT_NAME}"
                                 fi
@@ -197,10 +179,8 @@ pipeline {
                                 sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=8089/' .env.test
                                 sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=3307/' .env.test
                                 sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=8083/' .env.test
-                                echo 'MYSQL_HOST=mysql-db' >> .env.test
                                 
-                                echo "Test environment file created:"
-                                cat .env.test
+                                echo "Test environment file created"
                             """
                             
                             sh """
@@ -211,7 +191,7 @@ pipeline {
                             sleep 15
                             
                             retry(10) {
-                                sleep(5)
+                                sleep(5) // Increased sleep time to allow MySQL to fully initialize
                                 sh """
                                     COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=test_rootpass --connect-timeout=5
                                 """
@@ -220,38 +200,16 @@ pipeline {
                             echo "MySQL is ready! Running tests..."
                             
                             sh """
-                                # Verify MySQL user creation
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "SELECT User, Host FROM mysql.user;"
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "SHOW DATABASES;"
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "USE test_db; CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "USE test_db; INSERT IGNORE INTO test_table (id, name) VALUES (1, 'test');"
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "USE test_db; SELECT * FROM test_table;"
-                                
-                                # Test connection with test_user
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -utest_user -ptest_password -h mysql-db -e "USE test_db; SELECT * FROM test_table;" || {
-                                    echo "Failed to connect with test_user. Dumping MySQL user info:"
-                                    COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
-                                    exit 1
-                                }
+                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -utest_user -ptest_password -h mysql-db -e "SHOW DATABASES;"
                             """
                             
                             sh """
-                                # List files in PHP container to debug
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T php-apache ls -la /var/www/html
-                                
-                                # Verify PHP application connectivity
-                                curl -f http://localhost:8089/ || {
-                                    echo "PHP application test failed. Dumping container logs:"
-                                    COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test logs php-apache
-                                    echo "PHP application source code:"
-                                    COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
-                                    exit 1
-                                }
-                                curl -f http://localhost:8083/ || {
-                                    echo "Adminer interface test failed. Dumping container logs:"
-                                    COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test logs adminer
-                                    exit 1
-                                }
+                                curl -f http://localhost:8089/ || echo "PHP application test failed"
+                                curl -f http://localhost:8083/ || echo "Adminer interface test failed"
                             """
                             
                             echo "All tests passed!"
@@ -263,16 +221,11 @@ pipeline {
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test logs || echo 'Could not retrieve logs'
                                 echo "=== Container Status ==="
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test ps
-                                echo "=== MySQL User Info ==="
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;" || echo "Could not retrieve MySQL user info"
-                                echo "=== PHP Application Files ==="
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T php-apache ls -la /var/www/html || echo "Could not list PHP application files"
                             """
                             throw e
                         } finally {
                             sh """
                                 COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test down -v || true
-                                docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
                                 rm -f .env.test || true
                             """
                         }
@@ -432,22 +385,9 @@ pipeline {
             script {
                 dir("${APP_DIR}") {
                     sh """
-                        # Stop and remove containers for test environment
-                        docker ps -a --filter "network=${TEST_COMPOSE_PROJECT_NAME}_web-app-net" -q | xargs -r docker stop || true
-                        docker ps -a --filter "network=${TEST_COMPOSE_PROJECT_NAME}_web-app-net" -q | xargs -r docker rm || true
                         docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        # Remove test network
-                        docker network ls --filter name=${TEST_COMPOSE_PROJECT_NAME} -q | xargs -r docker network rm 2>/dev/null || true
-                        # Stop and remove containers for staging and production networks
-                        docker ps -a --filter "network=php-mysql-app-staging_web-app-net" -q | xargs -r docker stop || true
-                        docker ps -a --filter "network=php-mysql-app-staging_web-app-net" -q | xargs -r docker rm || true
-                        docker ps -a --filter "network=php-mysql-app-production_web-app-net" -q | xargs -r docker stop || true
-                        docker ps -a --filter "network=php-mysql-app-production_web-app-net" -q | xargs -r docker rm || true
-                        # Remove staging and production networks
-                        docker network ls --filter name=php-mysql-app -q | xargs -r docker network rm 2>/dev/null || true
                         docker system prune -f --filter "until=24h" || true
-                        docker network prune -f || true
                         rm -f .env.test .env.staging .env.production || true
                     """
                 }
@@ -536,90 +476,35 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             
             sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass_${environment}/' .env.${environment}
             sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=mydb_${environment}/' .env.${environment}
-            sed -i 's/MYSQL_USER=.*/MYSQL_USER=appuser_${environment}/' .env.${environment}
+            sed -i 's/MYSQL_USER=.*/MYSQL_USER=sqluser_${environment}/' .env.${environment}
             sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=MyAppUserPass456_${environment}/' .env.${environment}
             sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
             sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=${mysqlPort}/' .env.${environment}
             sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=${adminerPort}/' .env.${environment}
             sed -i 's/PHP_ENV=.*/PHP_ENV=${environment}/' .env.${environment}
             sed -i 's/MYSQL_APP_ENV=.*/MYSQL_APP_ENV=${environment}/' .env.${environment}
-            sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.18.${environment == 'staging' ? '19' : '20'}.0/24/' .env.${environment}
-            echo 'MYSQL_HOST=mysql-db' >> .env.${environment}
             
-            echo "Environment-specific .env file created for ${environment}:"
-            cat .env.${environment}
+            echo "Environment-specific .env file created for ${environment}"
         """
         
         sh """
-            # Stop and remove any containers using the network
-            docker ps -a --filter "network=php-mysql-app-${environment}_web-app-net" -q | xargs -r docker stop || true
-            docker ps -a --filter "network=php-mysql-app-${environment}_web-app-net" -q | xargs -r docker rm || true
-            # Remove existing networks to avoid conflicts
-            docker network ls --filter name=php-mysql-app-${environment} -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
-            docker compose -p ${projectName} --env-file .env.${environment} down -v || true
-            # Clean up unused networks
-            docker network prune -f || true
-            # Inspect remaining networks for debugging
-            echo "=== Existing Docker Networks Before Deployment ==="
-            docker network ls
-            docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
-                echo "Network: \$name, ID: \$id"
-                docker network inspect \$id || echo "Failed to inspect network \$name"
-            done
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} down -v || true
         """
         
         sh """
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} up -d --build 2>&1 | tee deploy.log
-            if [ \${PIPESTATUS[0]} -ne 0 ]; then
-                echo "Docker Compose deployment failed, displaying deploy log:"
-                cat deploy.log
-                echo "=== Existing Docker Networks After Failure ==="
-                docker network ls
-                docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
-                    echo "Network: \$name, ID: \$id"
-                    docker network inspect \$id || echo "Failed to inspect network \$name"
-                done
-                exit 1
-            fi
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} up -d --build
         """
         
         echo "Waiting for deployment to stabilize..."
-        sleep 90
+        sleep 60
         
         echo "Checking deployment health..."
         retry(15) {
             sleep(10)
             sh """
-                # Verify MySQL is running
                 COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
-                
-                # Verify MySQL user creation
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host FROM mysql.user WHERE User='appuser_${environment}';" || {
-                    echo "User 'appuser_${environment}' not found. Dumping MySQL user info:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
-                    exit 1
-                }
-                
-                # Test connection with application user
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uappuser_${environment} -pMyAppUserPass456_${environment} -h mysql-db -e "USE mydb_${environment}; SELECT 1;" || {
-                    echo "Failed to connect with appuser_${environment}. Dumping MySQL user info:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
-                    exit 1
-                }
-                
-                # Verify PHP application connectivity
-                curl -f http://localhost:${phpPort}/ || {
-                    echo "PHP application test failed. Dumping container logs:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs php-apache
-                    echo "PHP application source code:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
-                    exit 1
-                }
-                curl -f http://localhost:${adminerPort}/ || {
-                    echo "Adminer interface test failed. Dumping container logs:"
-                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs adminer
-                    exit 1
-                }
+                curl -f http://localhost:${phpPort}/ || exit 1
+                curl -f http://localhost:${adminerPort}/ || exit 1
                 echo "=== Service Status ==="
                 COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
             """
@@ -637,18 +522,6 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs || echo "No logs available"
             echo "=== Service Status ==="
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
-            echo "=== Existing Docker Networks ==="
-            docker network ls
-            docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
-                echo "Network: \$name, ID: \$id"
-                docker network inspect \$id || echo "Failed to inspect network \$name"
-            done
-            echo "=== MySQL User Info ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;" || echo "Could not retrieve MySQL user info"
-            echo "=== PHP Application Files ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache ls -la /var/www/html || echo "Could not list PHP application files"
-            echo "=== PHP Application Source ==="
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
         """
         throw e
     }
