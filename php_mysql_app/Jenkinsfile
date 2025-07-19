@@ -23,6 +23,13 @@ pipeline {
     }
 
     stages {
+        stage('Clean Workspace') {
+            steps {
+                echo "Cleaning Jenkins workspace to avoid permission issues..."
+                deleteDir() // Clear the entire workspace before checkout
+            }
+        }
+
         stage('Checkout') {
             steps {
                 echo "Checking out code from GitHub repository..."
@@ -49,6 +56,11 @@ pipeline {
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
                             ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Some Dockerfiles not found'
                             ls -la ./php-apache/src/index.php || echo 'index.php not found'
+                            # Verify docker-compose.yml is not in volumes/
+                            if [ -f volumes/docker-compose.yml ]; then
+                                echo "Error: docker-compose.yml found in volumes/ directory. It should be in ${APP_DIR}/"
+                                exit 1
+                            fi
                         """
                     }
                 }
@@ -61,15 +73,14 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         sh """
-                            # Create necessary directories as specified in .env
-                            mkdir -p php-apache/src mysql ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs
+                            # Create necessary directories with correct permissions
+                            mkdir -p volumes/php_data volumes/php_logs volumes/mysql_data volumes/mysql_logs
                             
-                            # Try to set permissions with sudo, fall back if it fails
-                            sudo chmod 755 ./volumes || echo "Warning: Could not set permissions on ./volumes with sudo"
-                            sudo chmod 755 ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs || echo "Warning: Could not set permissions on volume subdirectories with sudo"
-                            sudo chown -R jenkins:jenkins ./volumes || echo "Warning: Could not change ownership with sudo"
+                            # Set permissions using the jenkins user (avoid sudo)
+                            chown -R \$(whoami):\$(whoami) volumes || echo "Warning: Could not change ownership of volumes directory"
+                            chmod -R 755 volumes || echo "Warning: Could not set permissions on volumes directory"
                             
-                            # Alternative: Use Docker to create directories with correct permissions
+                            # Use Docker to ensure permissions if needed
                             docker run --rm -v \$(pwd)/volumes:/volumes alpine:latest sh -c "
                                 chown -R 1000:1000 /volumes || echo 'Warning: Could not change ownership'
                                 chmod -R 755 /volumes || echo 'Warning: Could not change permissions'
