@@ -509,4 +509,134 @@ pipeline {
                         echo "Email notification skipped - EMAIL_CONFIGURED not set to true"
                     }
                 } catch (Exception e) {
-                    echo "Failed to send failure email:
+                    echo "Failed to send failure email: ${e.getMessage()}"
+                }
+            }
+        }
+
+        unstable {
+            echo "Pipeline completed with warnings."
+        }
+    }
+}
+
+def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
+    def projectName = "php-mysql-app-${environment}"
+    def composeCmd = sh(
+        script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
+        returnStdout: true
+    ).trim()
+    
+    try {
+        echo "Deploying PHP-MySQL application to ${environment}"
+        echo "PHP Port: ${phpPort}, MySQL Port: ${mysqlPort}, Adminer Port: ${adminerPort}"
+        
+        sh """
+            cp .env .env.${environment}
+            
+            sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass_${environment}/' .env.${environment}
+            sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=mydb_${environment}/' .env.${environment}
+            sed -i 's/MYSQL_USER=.*/MYSQL_USER=appuser_${environment}/' .env.${environment}
+            sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=MyAppUserPass456_${environment}/' .env.${environment}
+            sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
+            sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=${mysqlPort}/' .env.${environment}
+            sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=${adminerPort}/' .env.${environment}
+            sed -i 's/PHP_ENV=.*/PHP_ENV=${environment}/' .env.${environment}
+            sed -i 's/MYSQL_APP_ENV=.*/MYSQL_APP_ENV=${environment}/' .env.${environment}
+            sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.18.${environment == 'staging' ? '19' : '20'}.0/24/' .env.${environment}
+            echo 'MYSQL_HOST=mysql-db' >> .env.${environment}
+            
+            echo "Environment-specific .env file created for ${environment}:"
+            cat .env.${environment}
+        """
+        
+        sh """
+            # Stop and remove any containers using the network
+            docker ps -a --filter "network=php-mysql-app-${environment}_web-app-net" -q | xargs -r docker stop || true
+            docker ps -a --filter "network=php-mysql-app-${environment}_web-app-net" -q | xargs -r docker rm || true
+            # Remove existing networks to avoid conflicts
+            docker network ls --filter name=php-mysql-app-${environment} -q | xargs -r docker network rm 2>/dev/null || echo "No conflicting networks to remove"
+            docker compose -p ${projectName} --env-file .env.${environment} down -v || true
+            # Clean up unused networks
+            docker network prune -f || true
+        """
+        
+        sh """
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} up -d --build 2>&1 | tee deploy.log
+            if [ \${PIPESTATUS[0]} -ne 0 ]; then
+                echo "Docker Compose deployment failed, displaying deploy log:"
+                cat deploy.log
+                exit 1
+            fi
+        """
+        
+        echo "Waiting for deployment to stabilize..."
+        sleep 90
+        
+        echo "Checking deployment health..."
+        retry(15) {
+            sleep(10)
+            sh """
+                # Verify MySQL is running
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
+                
+                # Verify MySQL user creation
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host FROM mysql.user WHERE User='appuser_${environment}';" || {
+                    echo "User 'appuser_${environment}' not found. Dumping MySQL user info:"
+                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
+                    exit 1
+                }
+                
+                # Test connection with application user
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uappuser_${environment} -pMyAppUserPass456_${environment} -h mysql-db -e "USE mydb_${environment}; SELECT 1;" || {
+                    echo "Failed to connect with appuser_${environment}. Dumping MySQL user info:"
+                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;"
+                    exit 1
+                }
+                
+                # Verify PHP application connectivity
+                curl -f http://localhost:${phpPort}/ || {
+                    echo "PHP application test failed. Dumping container logs:"
+                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs php-apache
+                    echo "PHP application source code:"
+                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
+                    exit 1
+                }
+                curl -f http://localhost:${adminerPort}/ || {
+                    echo "Adminer interface test failed. Dumping container logs:"
+                    COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs adminer
+                    exit 1
+                }
+                echo "=== Service Status ==="
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
+            """
+        }
+        
+        echo "Successfully deployed to ${environment}"
+        echo "PHP Application: http://localhost:${phpPort}"
+        echo "Adminer: http://localhost:${adminerPort}"
+        echo "MySQL Connection: mysql -h127.0.0.1 -P${mysqlPort} -uroot -prootpass_${environment}"
+        
+    } catch (Exception e) {
+        echo "Deployment to ${environment} failed: ${e.getMessage()}"
+        sh """
+            echo "=== Service Logs ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs || echo "No logs available"
+            echo "=== Service Status ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
+            echo "=== Existing Docker Networks ==="
+            docker network ls
+            docker network ls --format '{{.Name}} {{.ID}}' | while read -r name id; do
+                echo "Network: \$name, ID: \$id"
+                docker network inspect \$id || echo "Failed to inspect network \$name"
+            done
+            echo "=== MySQL User Info ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysql -uroot -prootpass_${environment} -h mysql-db -e "SELECT User, Host, authentication_string FROM mysql.user;" || echo "Could not retrieve MySQL user info"
+            echo "=== PHP Application Files ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache ls -la /var/www/html || echo "Could not list PHP application files"
+            echo "=== PHP Application Source ==="
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T php-apache cat /var/www/html/index.php || echo "index.php not found"
+        """
+        throw e
+    }
+}
