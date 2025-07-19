@@ -14,7 +14,7 @@ if (!isset($_ENV['MYSQL_HOST'])) {
 $db_host = $_ENV['MYSQL_HOST'] ?? 'mysql-db';
 $db_port = $_ENV['MYSQL_PORT'] ?? '3306';
 $db_name = $_ENV['MYSQL_DATABASE'] ?? 'mydb_production';
-$db_user = $_ENV['MYSQL_USER'] ?? 'appuser_production';
+$db_user = $_ENV['MYSQL_USER'] ?? 'sqluser_production';
 $db_pass = $_ENV['MYSQL_PASSWORD'] ?? 'MyAppUserPass456_production';
 
 // Initialize variables
