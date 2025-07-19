@@ -13,9 +13,9 @@ if (!isset($_ENV['MYSQL_HOST'])) {
 // Database configuration with fallback values
 $db_host = $_ENV['MYSQL_HOST'] ?? 'mysql-db';
 $db_port = $_ENV['MYSQL_PORT'] ?? '3306';
-$db_name = $_ENV['MYSQL_DATABASE'] ?? 'mydb_production';
-$db_user = $_ENV['MYSQL_USER'] ?? 'appuser_production';
-$db_pass = $_ENV['MYSQL_PASSWORD'] ?? 'MyAppUserPass456_production';
+$db_name = $_ENV['MYSQL_DATABASE'] ?? 'myappdb';
+$db_user = $_ENV['MYSQL_USER'] ?? 'appuser';
+$db_pass = $_ENV['MYSQL_PASSWORD'] ?? 'MyAppUserPass456!@#';
 
 // Initialize variables
 $success_message = null;
