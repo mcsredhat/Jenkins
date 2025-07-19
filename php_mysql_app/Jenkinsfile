@@ -20,6 +20,7 @@ pipeline {
         EMAIL_CONFIGURED = 'false'
         COMPOSE_PROJECT_NAME = "php-mysql-app-${env.BUILD_NUMBER}"
         TEST_COMPOSE_PROJECT_NAME = "php-mysql-test-${env.BUILD_NUMBER}"
+        COMPOSE_CMD = sh(script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'", returnStdout: true).trim()
     }
 
     stages {
@@ -27,9 +28,10 @@ pipeline {
             steps {
                 script {
                     echo "Validating Docker and Docker Compose availability..."
+                    echo "Using COMPOSE_CMD: ${env.COMPOSE_CMD}"
                     sh """
                         docker --version || { echo "Error: Docker not found"; exit 1; }
-                        docker compose version 2>/dev/null || docker-compose --version 2>/dev/null || { echo "Error: Neither docker compose nor docker-compose found"; exit 1; }
+                        ${COMPOSE_CMD} version || { echo "Error: Docker Compose command '${COMPOSE_CMD}' not found"; exit 1; }
                     """
                 }
             }
@@ -52,8 +54,7 @@ pipeline {
                         echo "Checking Docker environment..."
                         sh """
                             docker --version || echo "Docker not found"
-                            docker compose version 2>/dev/null && echo "Docker Compose (plugin) available" || echo "Docker Compose plugin not found"
-                            docker-compose --version 2>/dev/null && echo "Docker Compose (standalone) available" || echo "Docker Compose standalone not found"
+                            ${COMPOSE_CMD} version 2>/dev/null && echo "Docker Compose available" || echo "Docker Compose not found"
                         """
                         echo "Checking project structure..."
                         sh """
@@ -88,8 +89,8 @@ pipeline {
                             " || echo "Warning: Docker permission setup failed, continuing anyway"
                             
                             # Stop any existing containers
-                            docker compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No compose services to stop"
-                            docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No test compose services to stop"
+                            ${COMPOSE_CMD} -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No compose services to stop"
+                            ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No test compose services to stop"
                             
                             # Clean up any orphaned containers
                             docker container prune -f || true
@@ -106,12 +107,7 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         try {
-                            def composeCmd = sh(
-                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                                returnStdout: true
-                            ).trim()
-                            echo "Using compose command: ${composeCmd}"
-                            
+                            echo "Using COMPOSE_CMD: ${COMPOSE_CMD}"
                             sh """
                                 pwd
                                 ls -la
@@ -138,7 +134,7 @@ pipeline {
                             """
                             
                             sh """
-                                COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} ${composeCmd} build --no-cache 2>&1 | tee build.log
+                                ${COMPOSE_CMD} -p ${COMPOSE_PROJECT_NAME} build --no-cache 2>&1 | tee build.log
                                 if [ \${PIPESTATUS[0]} -ne 0 ]; then
                                     echo "Docker Compose build failed, displaying build log:"
                                     cat build.log
@@ -176,11 +172,7 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         try {
-                            def composeCmd = sh(
-                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                                returnStdout: true
-                            ).trim()
-                            
+                            echo "Using COMPOSE_CMD: ${COMPOSE_CMD}"
                             sh """
                                 cp .env .env.test
                                 echo "MYSQL_MEMORY_LIMIT=2g" >> .env.test
@@ -205,7 +197,7 @@ pipeline {
                             """
                             
                             sh """
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test up -d --build
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test up -d --build
                             """
                             
                             echo "Waiting for services to start..."
@@ -214,18 +206,18 @@ pipeline {
                             retry(10) {
                                 sleep(2)
                                 sh """
-                                    COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysqladmin ping -h 127.0.0.1 -u root --password=test_rootpass --connect-timeout=5
+                                    ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysqladmin ping -h 127.0.0.1 -u root --password=test_rootpass --connect-timeout=5
                                 """
                             }
                             
                             echo "MySQL is ready! Running tests..."
                             
                             sh """
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "SHOW DATABASES;"
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; INSERT IGNORE INTO test_table (id, name) VALUES (1, 'test');"
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; SELECT * FROM test_table;"
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test exec -T mysql-db mysql -utest_user -ptest_password -h 127.0.0.1 -e "SHOW DATABASES;"
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "SHOW DATABASES;"
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; INSERT IGNORE INTO test_table (id, name) VALUES (1, 'test');"
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysql -uroot -ptest_rootpass -h 127.0.0.1 -e "USE test_db; SELECT * FROM test_table;"
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test exec -T mysql-db mysql -utest_user -ptest_password -h 127.0.0.1 -e "SHOW DATABASES;"
                             """
                             
                             sh """
@@ -238,14 +230,14 @@ pipeline {
                             echo "Test failed: ${e.getMessage()}"
                             sh """
                                 echo "=== Service Logs ==="
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test logs || echo 'Could not retrieve logs'
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test logs || echo 'Could not retrieve logs'
                                 echo "=== Container Status ==="
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test ps
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test ps
                             """
                             throw e
                         } finally {
                             sh """
-                                COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME} ${composeCmd} --env-file .env.test down -v || true
+                                ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} --env-file .env.test down -v || true
                                 rm -f .env.test || true
                             """
                         }
@@ -328,10 +320,7 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         try {
-                            def composeCmd = sh(
-                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                                returnStdout: true
-                            ).trim()
+                            echo "Using COMPOSE_CMD: ${COMPOSE_CMD}"
                             try {
                                 docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
                                     def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
@@ -416,12 +405,9 @@ pipeline {
             echo "Cleaning up..."
             script {
                 dir("${APP_DIR}") {
-                    def composeCmd = sh(
-                        script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                        returnStdout: true
-                    ).trim()
+                    echo "Using COMPOSE_CMD: ${COMPOSE_CMD}"
                     sh """
-                        ${composeCmd} -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        ${COMPOSE_CMD} -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker system prune -f --filter "until=24h" || true
                         rm -f .env.test .env.staging .env.production || true
                     """
@@ -497,14 +483,12 @@ pipeline {
 
 def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
     def projectName = "php-mysql-app-${environment}"
-    def composeCmd = sh(
-        script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-        returnStdout: true
-    ).trim()
+    def composeCmd = env.COMPOSE_CMD ?: sh(script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'", returnStdout: true).trim()
     
     try {
         echo "Deploying PHP-MySQL application to ${environment}"
         echo "PHP Port: ${phpPort}, MySQL Port: ${mysqlPort}, Adminer Port: ${adminerPort}"
+        echo "Using composeCmd: ${composeCmd}"
         
         sh """
             cp .env .env.${environment}
@@ -523,40 +507,3 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         sh """
             ${composeCmd} -p ${projectName} --env-file .env.${environment} down -v || true
         """
-        
-        sh """
-            ${composeCmd} -p ${projectName} --env-file .env.${environment} up -d --build
-        """
-        
-        echo "Waiting for deployment to stabilize..."
-        sleep 60
-        
-        echo "Checking deployment health..."
-        retry(15) {
-            sleep(10)
-            sh """
-                ${composeCmd} -p ${projectName} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h 127.0.0.1 -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
-                curl -f http://localhost:${phpPort}/ || exit 1
-                curl -f http://localhost:${adminerPort}/ || exit 1
-                echo "=== Service Status ==="
-                ${composeCmd} -p ${projectName} --env-file .env.${environment} ps
-            """
-        }
-        
-        echo "Successfully deployed to ${environment}"
-        echo "PHP Application: http://localhost:${phpPort}"
-        echo "Adminer: http://localhost:${adminerPort}"
-        echo "MySQL Connection: mysql -h127.0.0.1 -P${mysqlPort} -uroot -prootpass_${environment}"
-        
-    } catch (Exception e) {
-        echo "Deployment to ${environment} failed: ${e.getMessage()}"
-        echo "Checking what went wrong..."
-        sh """
-            echo "=== Service Logs ==="
-            ${composeCmd} -p ${projectName} --env-file .env.${environment} logs || echo "No logs available"
-            echo "=== Service Status ==="
-            ${composeCmd} -p ${projectName} --env-file .env.${environment} ps
-        """
-        throw e
-    }
-}
