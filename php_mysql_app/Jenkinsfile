@@ -16,7 +16,6 @@ pipeline {
         ENABLE_STAGING_DEPLOY = 'true'
         ENABLE_PRODUCTION_DEPLOY = 'true'
         EMAIL_CONFIGURED = 'false'
-        // Define COMPOSE_CMD globally
         COMPOSE_CMD = sh(script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'", returnStdout: true).trim()
     }
 
@@ -233,8 +232,8 @@ pipeline {
                                 ${COMPOSE_CMD} --env-file .env.test exec -T php-apache php -r "
                                     \\$host = getenv('DB_HOST') ?: 'mysql-db';
                                     \\$port = getenv('DB_PORT') ?: '3306';
-                                    \\$dbname = getenv('DB_NAME') ?: 'php_mysql_app';
-                                    \\$username = getenv('DB_USER') ?: 'appuser';
+                                    \\$dbname = getenv('DB_NAME') ?: 'myappdb';
+                                    \\$username = getenv('DB_USER') ?: 'sqluser';
                                     \\$password = getenv('DB_PASSWORD') ?: 'SecureUserPass2024!';
                                     echo \\\"Attempting connection with: host=\\$host, port=\\$port, dbname=\\$dbname, user=\\$username\\\\n\\\";
                                     try {
@@ -271,9 +270,16 @@ pipeline {
                             throw e
                         } finally {
                             sh """
-                               docker ps -a || true
-                               docker logs my_php_apache || true
-                               docker logs mysql-project || true
+                                echo '=== Container Status ==='
+                                docker ps -a || true
+                                echo '=== MySQL Container Logs ==='
+                                docker logs mysql-project --tail=50 || true
+                                echo '=== PHP Apache Container Logs ==='
+                                docker logs my_php_apache --tail=50 || true
+                                echo '=== MySQL Health Check ==='
+                                docker inspect mysql-project --format='{{.State.Health.Status}}' || true
+                                echo '=== MySQL Health Check Logs ==='
+                                docker inspect mysql-project --format='{{range .State.Health.Log}}{{.Output}}{{end}}' || true
                             """
                         }
                     }
@@ -436,7 +442,7 @@ pipeline {
             script {
                 dir(APP_DIR) {
                     sh """
-                        ${COMPOSE_CMD} --env-file .env.test down -v 2>/dev/null || true
+                        #${COMPOSE_CMD} --env-file .env.test down -v 2>/dev/null || true
                         ${COMPOSE_CMD} --env-file .env.staging down 2>/dev/null || true
                         docker system prune -f --filter "until=24h"
                         rm -f .env.test .env.staging .env.production || true
