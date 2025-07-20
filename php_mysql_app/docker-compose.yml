@@ -222,7 +222,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h localhost -u ${MYSQL_HEALTHCHECK_USER} --password=\"${MYSQL_HEALTHCHECK_PASSWORD}\" || exit 1"
+          "mysqladmin ping -h localhost -u root --password=\"${MYSQL_HEALTHCHECK_PASSWORD}\" || exit 1"
         ]
       interval: ${HEALTHCHECK_INTERVAL}
       timeout: ${HEALTHCHECK_TIMEOUT}
