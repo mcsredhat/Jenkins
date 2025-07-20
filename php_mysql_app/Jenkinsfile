@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'https://index.docker.io/v1/'
         DOCKER_USERNAME = 'farajassulai'
-        DOCKER_REPO_PHP = 'php-mysql-app'
+        DOCKER_REPO_PHP = 'php-apache'
         DOCKER_REPO_MYSQL = 'mysql-db'
         PHP_IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO_PHP}"
         MYSQL_IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO_MYSQL}"
@@ -12,7 +12,7 @@ pipeline {
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         
         // Application directory
-        APP_DIR = 'php-mysql-app'
+        APP_DIR = 'php_mysql_app'
         
         // Pipeline control flags
         SKIP_SECURITY_SCAN = 'false'
