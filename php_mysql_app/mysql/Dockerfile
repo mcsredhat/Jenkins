@@ -82,7 +82,7 @@ STOPSIGNAL SIGTERM
 # Healthcheck
 HEALTHCHECK --interval=30s \
     --timeout=15s \
-    --start-period=30s \
+    --start-period=100s \
     --retries=3 \
     CMD mysqladmin ping -h localhost -u root --password="$MYSQL_ROOT_PASSWORD" || exit 1
 
