@@ -1,60 +1,47 @@
-# Base image - corrected to use official MySQL image
+# Base image - using official MySQL image
 FROM mysql:8.0
 
-# Build-time variables
-ARG MYSQL_VERSION=8.0
-ARG MYSQL_USER_ID=1010
-ARG MYSQL_USER_NAME=sqluser
-ARG MYSQL_GROUP_ID=1010
-ARG MYSQL_GROUP_NAME=sqlgroup
-ARG MYSQL_APP_PORT=3306
-ARG MYSQL_APP_ENV=production
-ARG MYSQL_BASH_SHELL=/bin/bash
-ARG MYSQL_APP_DIR=/sqldb
-ARG MYSQL_MOUNT1=/sqldb/data
-ARG MYSQL_MOUNT2=/sqldb/logs
+# Build-time variables - corrected to match .env values
+ARG SQLVER=8.0
+ARG USER_ID=1010
+ARG USER_NAME=sqluser
+ARG GROUP_ID=1010
+ARG GROUP_NAME=sqlgroup
+ARG APP_PORT=3306
+ARG APP_ENV=production
+ARG BASH_SHELL=/bin/bash
+ARG APP_DIR=/sqldb
+ARG MOUNT1=/sqldb/data
+ARG MOUNT2=/sqldb/logs
 ARG MYSQL_ROOT_PASSWORD=rootpass123!@#
 ARG MYSQL_DATABASE=myappdb
 ARG MYSQL_PASSWORD=MyAppUserPass456!@#
-ARG MYSQL_USER=appuser
-ARG CP_SQL_CFG=mysql/config
-ARG TZ=Europe/Paris
-ARG MYSQL_CHARSET=utf8mb4
-ARG MYSQL_COLLATION=utf8mb4_unicode_ci
-ARG MYSQL_LOWER_CASE_TABLE_NAMES=1
-ARG MYSQL_MAX_CONNECTIONS=151
-ARG MYSQL_INNODB_BUFFER_POOL_SIZE=256M
+ARG MYSQL_USER=sqluser
 
 # Set runtime environment variables from ARGs
-ENV MYSQL_VERSION=${MYSQL_VERSION} \
-    USER_ID=${MYSQL_USER_ID} \
-    USER_NAME=${MYSQL_USER_NAME} \
-    GROUP_ID=${MYSQL_GROUP_ID} \
-    GROUP_NAME=${MYSQL_GROUP_NAME} \
-    APP_PORT=${MYSQL_APP_PORT} \
-    APP_ENV=${MYSQL_APP_ENV} \
-    BASH_SHELL=${MYSQL_BASH_SHELL} \
-    APP_DIR=${MYSQL_APP_DIR} \
-    MOUNT1=${MYSQL_MOUNT1} \
-    MOUNT2=${MYSQL_MOUNT2} \
+ENV SQLVER=${SQLVER} \
+    USER_ID=${USER_ID} \
+    USER_NAME=${USER_NAME} \
+    GROUP_ID=${GROUP_ID} \
+    GROUP_NAME=${GROUP_NAME} \
+    APP_PORT=${APP_PORT} \
+    APP_ENV=${APP_ENV} \
+    BASH_SHELL=${BASH_SHELL} \
+    APP_DIR=${APP_DIR} \
+    MOUNT1=${MOUNT1} \
+    MOUNT2=${MOUNT2} \
     MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD} \
     MYSQL_DATABASE=${MYSQL_DATABASE} \
     MYSQL_PASSWORD=${MYSQL_PASSWORD} \
     MYSQL_USER=${MYSQL_USER} \
-    CP_SQL_CFG=${CP_SQL_CFG} \
-    TZ=${TZ} \
-    MYSQL_CHARSET=${MYSQL_CHARSET} \
-    MYSQL_COLLATION=${MYSQL_COLLATION} \
-    MYSQL_LOWER_CASE_TABLE_NAMES=${MYSQL_LOWER_CASE_TABLE_NAMES} \
-    MYSQL_MAX_CONNECTIONS=${MYSQL_MAX_CONNECTIONS} \
-    MYSQL_INNODB_BUFFER_POOL_SIZE=${MYSQL_INNODB_BUFFER_POOL_SIZE}
+    TZ=Europe/Paris
 
 # Labels
 LABEL maintainer="farajassulai@gmail.com"
-LABEL environment=${MYSQL_APP_ENV}
+LABEL environment=${APP_ENV}
 LABEL description="MySQL database server with custom sqluser and configuration"
-LABEL date-created="2025-07-18"
-LABEL version=${MYSQL_VERSION}
+LABEL date-created="2025-06-19"
+LABEL version=${SQLVER}
 
 # Set working directory
 WORKDIR ${APP_DIR}
@@ -62,17 +49,14 @@ WORKDIR ${APP_DIR}
 # Create necessary directories, user, group and set permissions
 RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     useradd -u ${USER_ID} -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME} && \
-    mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} /etc/mysql/conf.d  && \
+    mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} /etc/mysql/conf.d && \
     chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} && \
     chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2}
 
-# Copy MySQL configuration files (only if they exist)
-# COPY --chown=${USER_NAME}:${GROUP_NAME} mysql/config/my.cnf /etc/mysql/conf.d/custom.cnf || true
-# COPY --chown=${USER_NAME}:${GROUP_NAME} mysql/config/init.sql /docker-entrypoint-initdb.d/ || true
+# Copy MySQL configuration files (make sure these files exist)
 COPY mysql/config/my.cnf /etc/mysql/conf.d/custom.cnf
 COPY mysql/config/init.sql /docker-entrypoint-initdb.d/
-# COPY volumes/mysql_data ${APP_DIR}/volumes/mysql_data 
-# COPY volumes/mysql_logs ${APP_DIR}/volumes/mysql_logs
+
 # Set proper permissions for config files
 RUN chown ${USER_NAME}:${GROUP_NAME} /etc/mysql/conf.d/custom.cnf && \
     chmod 644 /etc/mysql/conf.d/custom.cnf && \
@@ -85,8 +69,9 @@ VOLUME ["${MOUNT1}", "${MOUNT2}", "/var/lib/mysql"]
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Switch to non-root user
-USER ${USER_NAME}
+# IMPORTANT: MySQL containers must run as root user for proper database initialization
+# The official MySQL image handles security internally
+# USER ${USER_NAME}  # Commented out - MySQL needs root privileges
 
 # STOPSIGNAL (docker stop --signal=SIGTERM "container_id")
 STOPSIGNAL SIGTERM
