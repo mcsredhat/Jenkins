@@ -151,8 +151,8 @@ pipeline {
                             # Create volume directories as specified in .env
                             mkdir -p ./volumes/php_data ./volumes/php_logs
                             mkdir -p ./volumes/mysql_data ./volumes/mysql_logs
-                            chmod 755 ./volumes/php_data ./volumes/php_logs
-                            chmod 755 ./volumes/mysql_data ./volumes/mysql_logs
+                            chmod 755 ./volumes/php_data ./volumes/php_logs || true
+                            chmod 755 ./volumes/mysql_data ./volumes/mysql_logs || true
                             
                             # Clean up any existing containers
                             docker compose down -v 2>/dev/null || docker-compose down -v 2>/dev/null || echo "No compose services to stop"
