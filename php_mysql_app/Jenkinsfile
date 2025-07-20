@@ -9,7 +9,7 @@ pipeline {
         PHP_IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO_PHP}"
         MYSQL_IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO_MYSQL}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
-        GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins.git'
+        GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         
         // Application directory
         APP_DIR = 'php-mysql-app'
@@ -36,7 +36,8 @@ pipeline {
                         echo "Working directory: ${pwd()}"
                         
                         // Show current working directory and contents
-                        sh "pwd && ls -la"
+                         sh " cd ${APP_DIR} "
+                         sh "pwd && ls -la"
                         
                         echo "Checking Docker environment..."
                         sh """
@@ -47,6 +48,7 @@ pipeline {
                         
                         echo "Checking project structure..."
                         sh """
+                            ls -la docker-compose.yml .env  Jenkinsfile || echo 'Docker Compose files not found'
                             ls -la ./mysql/ ./mysql/config ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Some project directories not found'
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
                             ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Some Dockerfiles not found'
