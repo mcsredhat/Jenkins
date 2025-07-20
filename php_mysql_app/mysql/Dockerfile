@@ -51,8 +51,8 @@ RUN mkdir -p ${MYSQL_APP_DIR} ${MYSQL_MOUNT2} /var/log/mysql && \
     chmod 755 /var/log/mysql
 
 # Copy configuration files from mysql/src directory
-COPY ./src/my.cnf /etc/mysql/conf.d/custom.cnf
-COPY ./src/init.sql /docker-entrypoint-initdb.d/
+COPY mysql/src/my.cnf /etc/mysql/conf.d/custom.cnf
+COPY mysql/src/init.sql /docker-entrypoint-initdb.d/
 
 # Set proper permissions for config files
 RUN chown mysql:mysql /etc/mysql/conf.d/custom.cnf && \
