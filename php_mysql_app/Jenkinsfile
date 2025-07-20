@@ -10,16 +10,14 @@ pipeline {
         MYSQL_IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO_MYSQL}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        
-        // Application directory
         APP_DIR = 'php_mysql_app'
-        
-        // Pipeline control flags
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
         ENABLE_PRODUCTION_DEPLOY = 'true'
         EMAIL_CONFIGURED = 'false'
+        // Define COMPOSE_CMD globally
+        COMPOSE_CMD = sh(script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'", returnStdout: true).trim()
     }
 
     stages {
@@ -27,24 +25,19 @@ pipeline {
             steps {
                 echo "Checking out code from GitHub repository..."
                 checkout scm
-
                 script {
                     dir(APP_DIR) {
                         echo "Current branch: ${env.BRANCH_NAME ?: 'main'}"
                         echo "Git commit: ${env.GIT_COMMIT ?: 'unknown'}"
                         echo "Repository URL: ${GITHUB_REPO}"
                         echo "Working directory: ${pwd()}"
-                        
-                        // Show current working directory and contents
-                         sh "pwd && ls -la"
-                        
+                        sh "pwd && ls -la"
                         echo "Checking Docker environment..."
                         sh """
                             docker --version || echo "Docker not found"
                             docker compose version 2>/dev/null && echo "Docker Compose (plugin) available" || echo "Docker Compose plugin not found"
                             docker-compose --version 2>/dev/null && echo "Docker Compose (standalone) available" || echo "Docker Compose standalone not found"
                         """
-                        
                         echo "Checking project structure..."
                         sh """
                             ls -la docker-compose.yml || echo ' docker-compose.yml files not found'
@@ -72,7 +65,6 @@ pipeline {
                 echo "Loading port configuration from .env file..."
                 script {
                     dir(APP_DIR) {
-                        // Load environment variables from .env file
                         def envVars = [:]
                         if (fileExists('.env')) {
                             def envContent = readFile('.env')
@@ -85,8 +77,6 @@ pipeline {
                                     }
                                 }
                             }
-                            
-                            // Set environment variables from .env file
                             env.COMPOSE_PROJECT_NAME = envVars['COMPOSE_PROJECT_NAME'] ?: 'php-mysql-app'
                             env.PHP_EXTERNAL_PORT = envVars['PHP_EXTERNAL_PORT'] ?: '8088'
                             env.MYSQL_EXTERNAL_PORT = envVars['MYSQL_EXTERNAL_PORT'] ?: '3306'
@@ -100,18 +90,13 @@ pipeline {
                             env.PRODUCTION_PHP_PORT = envVars['PRODUCTION_PHP_PORT'] ?: '8091'
                             env.PRODUCTION_MYSQL_PORT = envVars['PRODUCTION_MYSQL_PORT'] ?: '3308'
                             env.PRODUCTION_ADMINER_PORT = envVars['PRODUCTION_ADMINER_PORT'] ?: '8085'
-                            
-                            // Load MySQL credentials for health checks
                             env.MYSQL_ROOT_PASSWORD = envVars['MYSQL_ROOT_PASSWORD'] ?: 'SecureRootPass2024!'
                             env.MYSQL_HEALTHCHECK_USER = envVars['MYSQL_HEALTHCHECK_USER'] ?: 'healthcheck'
                             env.MYSQL_HEALTHCHECK_PASSWORD = envVars['MYSQL_HEALTHCHECK_PASSWORD'] ?: 'SecureHealthPass2024!'
-                            
                             echo "Loaded environment configuration successfully"
                         } else {
                             error("No .env file found in ${APP_DIR}")
                         }
-                        
-                        // Display loaded port configuration
                         echo """
                         ===========================================
                         LOADED PORT CONFIGURATION
@@ -120,17 +105,14 @@ pipeline {
                           - PHP-Apache: ${env.PHP_EXTERNAL_PORT}
                           - MySQL: ${env.MYSQL_EXTERNAL_PORT}
                           - Adminer: ${env.ADMINER_EXTERNAL_PORT}
-                        
                         Testing Environment:
                           - PHP-Apache: ${env.TEST_PHP_PORT}
                           - MySQL: ${env.TEST_MYSQL_PORT}
                           - Adminer: ${env.TEST_ADMINER_PORT}
-                        
                         Staging Environment:
                           - PHP-Apache: ${env.STAGING_PHP_PORT}
                           - MySQL: ${env.STAGING_MYSQL_PORT}
                           - Adminer: ${env.STAGING_ADMINER_PORT}
-                        
                         Production Environment:
                           - PHP-Apache: ${env.PRODUCTION_PHP_PORT}
                           - MySQL: ${env.PRODUCTION_MYSQL_PORT}
@@ -148,18 +130,11 @@ pipeline {
                 script {
                     dir(APP_DIR) {
                         sh """
-                            # Create volume directories as specified in .env
                             mkdir -p ./volumes/{php_data,php_logs,mysql_data,mysql_logs} || true
-                            # Only change permissions if we have the rights
                             chmod 755 ./volumes/* || true
-                            # Verify directories exist
                             ls -la ./volumes/
-                            
-                            # Clean up any existing containers
-                            docker compose down -v 2>/dev/null || docker-compose down -v 2>/dev/null || echo "No compose services to stop"
+                            ${COMPOSE_CMD} down -v 2>/dev/null || echo "No compose services to stop"
                             docker container prune -f || true
-                            
-                            # Remove any test containers
                             docker stop test-php-mysql-${env.BUILD_NUMBER} || true
                             docker rm test-php-mysql-${env.BUILD_NUMBER} || true
                         """
@@ -174,34 +149,20 @@ pipeline {
                 script {
                     dir(APP_DIR) {
                         try {
-                            // Determine which compose command to use
-                            def composeCmd = sh(
-                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                                returnStdout: true
-                            ).trim()
-                            echo "Using compose command: ${composeCmd}"
-                            
-                            // Build all services
                             sh """
-                                ${composeCmd} build 2>&1 | tee build.log
+                                ${COMPOSE_CMD} build 2>&1 | tee build.log
                                 if [ \${PIPESTATUS[0]} -ne 0 ]; then
                                     echo "Docker Compose build failed, displaying build log:"
                                     cat build.log
                                     exit 1
                                 fi
                             """
-                            
-                            // Tag images with build-specific tags using the actual compose project name
                             sh """
-                                # Get the actual image names created by docker-compose
                                 PHP_IMAGE=\$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep "${env.COMPOSE_PROJECT_NAME}" | grep -E "(php|apache)" | head -1 | tr -s ' ' | cut -d' ' -f1)
                                 MYSQL_IMAGE=\$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep "${env.COMPOSE_PROJECT_NAME}" | grep mysql | head -1 | tr -s ' ' | cut -d' ' -f1)
-                                
                                 echo "Found images:"
                                 echo "PHP Image: \$PHP_IMAGE"
                                 echo "MySQL Image: \$MYSQL_IMAGE"
-                                
-                                # Tag PHP image
                                 if [ ! -z "\$PHP_IMAGE" ] && [ "\$PHP_IMAGE" != " " ]; then
                                     docker tag \$PHP_IMAGE ${PHP_IMAGE_NAME}:${BUILD_TAG}
                                     docker tag \$PHP_IMAGE ${PHP_IMAGE_NAME}:latest
@@ -209,8 +170,6 @@ pipeline {
                                 else
                                     echo "WARNING: PHP image not found for tagging"
                                 fi
-                                
-                                # Tag MySQL image
                                 if [ ! -z "\$MYSQL_IMAGE" ] && [ "\$MYSQL_IMAGE" != " " ]; then
                                     docker tag \$MYSQL_IMAGE ${MYSQL_IMAGE_NAME}:${BUILD_TAG}
                                     docker tag \$MYSQL_IMAGE ${MYSQL_IMAGE_NAME}:latest
@@ -218,11 +177,9 @@ pipeline {
                                 else
                                     echo "WARNING: MySQL image not found for tagging"
                                 fi
-                                
                                 echo "Images built and tagged successfully"
                                 docker images | grep -E "(${DOCKER_USERNAME}|${env.COMPOSE_PROJECT_NAME})"
                             """
-                            
                         } catch (Exception e) {
                             echo "Build failed: ${e.getMessage()}"
                             sh "cat build.log || echo 'No build log available'"
@@ -239,7 +196,6 @@ pipeline {
                 script {
                     dir(APP_DIR) {
                         try {
-                            // Create test environment file
                             sh """
                                 cp .env .env.test
                                 sed -i 's/PHP_EXTERNAL_PORT=${env.PHP_EXTERNAL_PORT}/PHP_EXTERNAL_PORT=${env.TEST_PHP_PORT}/' .env.test
@@ -249,61 +205,38 @@ pipeline {
                                 sed -i 's/PHP_ENV=production/PHP_ENV=testing/' .env.test
                                 sed -i 's/MYSQL_APP_ENV=production/MYSQL_APP_ENV=testing/' .env.test
                             """
-                            
-                            def composeCmd = sh(
-                                script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-                                returnStdout: true
-                            ).trim()
-                            
-                            // Start test environment
                             sh """
-                                ${composeCmd} --env-file .env.test up -d --build
+                                ${COMPOSE_CMD} --env-file .env.test up -d --build
                                 echo "Waiting for services to start..."
                                 sleep 30
                             """
-                            
-                            // Wait for MySQL to be ready using correct credentials
                             echo "Waiting for MySQL to be ready..."
                             retry(15) {
                                 sleep(10)
                                 sh """
-                                    ${composeCmd} --env-file .env.test exec -T mysql-db mysqladmin ping -h localhost -u ${env.MYSQL_HEALTHCHECK_USER} --password="${env.MYSQL_HEALTHCHECK_PASSWORD}" || exit 1
+                                    ${COMPOSE_CMD} --env-file .env.test exec -T mysql-db mysqladmin ping -h localhost -u ${env.MYSQL_HEALTHCHECK_USER} --password="${env.MYSQL_HEALTHCHECK_PASSWORD}" || exit 1
                                 """
                             }
-                            
-                            // Wait for PHP-Apache to be ready with health check endpoint
                             echo "Waiting for PHP-Apache to be ready..."
                             retry(10) {
                                 sleep(10)
                                 sh """
-                                    # Try health endpoint first, then fallback to root
                                     curl -f http://localhost:${env.TEST_PHP_PORT}/health || curl -f http://localhost:${env.TEST_PHP_PORT} || exit 1
                                 """
                             }
-                            
-                            // Run tests
                             echo "Running application tests..."
                             sh """
-                                # Test MySQL connectivity with healthcheck user
-                                ${composeCmd} --env-file .env.test exec -T mysql-db mysql -u${env.MYSQL_HEALTHCHECK_USER} -p${env.MYSQL_HEALTHCHECK_PASSWORD} -e "SHOW DATABASES;"
-                                
-                                # Test PHP-Apache connectivity
+                                ${COMPOSE_CMD} --env-file .env.test exec -T mysql-db mysql -u${env.MYSQL_HEALTHCHECK_USER} -p${env.MYSQL_HEALTHCHECK_PASSWORD} -e "SHOW DATABASES;"
                                 curl -f http://localhost:${env.TEST_PHP_PORT}/health -o /dev/null -s -w "Health Check HTTP Status: %{http_code}\\n" || \
                                 curl -f http://localhost:${env.TEST_PHP_PORT} -o /dev/null -s -w "Root HTTP Status: %{http_code}\\n"
-                                
-                                # Test Adminer connectivity
                                 curl -f http://localhost:${env.TEST_ADMINER_PORT} -o /dev/null -s -w "Adminer HTTP Status: %{http_code}\\n"
-                                
-                                # Test database connection from PHP using environment variables from docker-compose
-                                ${composeCmd} --env-file .env.test exec -T php-apache php -r "
+                                ${COMPOSE_CMD} --env-file .env.test exec -T php-apache php -r "
                                     \\$host = getenv('DB_HOST') ?: 'mysql-db';
                                     \\$port = getenv('DB_PORT') ?: '3306';
                                     \\$dbname = getenv('DB_NAME') ?: 'php_mysql_app';
                                     \\$username = getenv('DB_USER') ?: 'appuser';
                                     \\$password = getenv('DB_PASSWORD') ?: 'SecureUserPass2024!';
-                                    
                                     echo \\\"Attempting connection with: host=\\$host, port=\\$port, dbname=\\$dbname, user=\\$username\\\\n\\\";
-                                    
                                     try {
                                         \\$dsn = \\\"mysql:host=\\$host;port=\\$port;dbname=\\$dbname\\\";
                                         \\$pdo = new PDO(\\$dsn, \\$username, \\$password, [
@@ -311,45 +244,34 @@ pipeline {
                                             PDO::ATTR_TIMEOUT => 5
                                         ]);
                                         echo \\\"✅ Database connection successful!\\\\n\\\";
-                                        
-                                        // Test a simple query
                                         \\$stmt = \\$pdo->query('SELECT VERSION() as version');
                                         \\$result = \\$stmt->fetch();
                                         echo \\\"MySQL Version: \\\" . \\$result['version'] . \\\"\\\\n\\\";
-                                        
                                     } catch (PDOException \\$e) {
                                         echo \\\"❌ Database connection failed: \\\" . \\$e->getMessage() . \\\"\\\\n\\\";
                                         exit(1);
                                     }
                                 "
-                                
-                                # Test container communication
                                 echo "Testing container network connectivity..."
-                                ${composeCmd} --env-file .env.test exec -T php-apache ping -c 3 mysql-db || echo "Ping test failed but containers might still communicate"
+                                ${COMPOSE_CMD} --env-file .env.test exec -T php-apache ping -c 3 mysql-db || echo "Ping test failed but containers might still communicate"
                             """
-                            
                             echo "All tests passed!"
-                            
                         } catch (Exception e) {
                             echo "Tests failed: ${e.getMessage()}"
                             sh """
                                 echo "=== Service Status ==="
-                                ${composeCmd} --env-file .env.test ps || echo "Could not retrieve service status"
-                                
+                                ${COMPOSE_CMD} --env-file .env.test ps || echo "Could not retrieve service status"
                                 echo "=== Service Logs ==="
-                                ${composeCmd} --env-file .env.test logs --tail=50 || echo "Could not retrieve logs"
-                                
+                                ${COMPOSE_CMD} --env-file .env.test logs --tail=50 || echo "Could not retrieve logs"
                                 echo "=== Network Information ==="
                                 docker network ls | grep test || echo "No test networks found"
-                                
                                 echo "=== Container Information ==="
                                 docker ps | grep test || echo "No test containers found"
                             """
                             throw e
                         } finally {
-                            // Cleanup test environment
                             sh """
-                                ${composeCmd} --env-file .env.test down -v || true
+                                ${COMPOSE_CMD} --env-file .env.test down -v || true
                                 rm -f .env.test || true
                             """
                         }
@@ -376,8 +298,6 @@ pipeline {
                                 currentBuild.result = 'UNSTABLE'
                                 return
                             }
-                            
-                            // Scan PHP image
                             echo "Scanning PHP image for vulnerabilities..."
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -386,8 +306,6 @@ pipeline {
                                 --severity LOW,MEDIUM,HIGH,CRITICAL \
                                 ${PHP_IMAGE_NAME}:${BUILD_TAG} || true
                             """
-                            
-                            // Scan MySQL image
                             echo "Scanning MySQL image for vulnerabilities..."
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -396,8 +314,6 @@ pipeline {
                                 --severity LOW,MEDIUM,HIGH,CRITICAL \
                                 ${MYSQL_IMAGE_NAME}:${BUILD_TAG} || true
                             """
-                            
-                            // Check for critical vulnerabilities
                             def criticalScanResult = sh(
                                 script: """
                                     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -408,14 +324,12 @@ pipeline {
                                 """,
                                 returnStatus: true
                             )
-                            
                             if (criticalScanResult == 0) {
                                 echo "No CRITICAL vulnerabilities found"
                             } else {
                                 echo "CRITICAL vulnerabilities found - marking build as unstable"
                                 currentBuild.result = 'UNSTABLE'
                             }
-                            
                         } catch (Exception e) {
                             echo "Security scan failed: ${e.getMessage()}"
                             currentBuild.result = 'UNSTABLE'
@@ -439,17 +353,12 @@ pipeline {
                     dir(APP_DIR) {
                         try {
                             docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
-                                // Push PHP image
                                 def phpImage = docker.image("${PHP_IMAGE_NAME}:${BUILD_TAG}")
                                 phpImage.push()
                                 phpImage.push("latest")
-                                
-                                // Push MySQL image
                                 def mysqlImage = docker.image("${MYSQL_IMAGE_NAME}:${BUILD_TAG}")
                                 mysqlImage.push()
                                 mysqlImage.push("latest")
-                                
-                                // Branch-specific tags
                                 if (env.BRANCH_NAME == 'main') {
                                     phpImage.push("production")
                                     mysqlImage.push("production")
@@ -457,7 +366,6 @@ pipeline {
                                     phpImage.push("staging")
                                     mysqlImage.push("staging")
                                 }
-                                
                                 echo "Images pushed successfully to Docker Hub"
                             }
                         } catch (Exception e) {
@@ -527,14 +435,9 @@ pipeline {
             script {
                 dir(APP_DIR) {
                     sh """
-                        # Clean up any test environments
-                        docker compose --env-file .env.test down -v 2>/dev/null || true
-                        docker compose --env-file .env.staging down 2>/dev/null || true
-                        
-                        # System cleanup
+                        ${COMPOSE_CMD} --env-file .env.test down -v 2>/dev/null || true
+                        ${COMPOSE_CMD} --env-file .env.staging down 2>/dev/null || true
                         docker system prune -f --filter "until=24h"
-                        
-                        # Remove temporary files
                         rm -f .env.test .env.staging .env.production || true
                     """
                 }
@@ -550,17 +453,14 @@ pipeline {
                             subject: "PHP-MySQL App Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
                                 PHP-MySQL application build succeeded!
-
                                 Job: ${env.JOB_NAME}
                                 Build Number: ${env.BUILD_NUMBER}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
                                 Application Directory: ${APP_DIR}
                                 PHP Image: ${PHP_IMAGE_NAME}:${BUILD_TAG}
                                 MySQL Image: ${MYSQL_IMAGE_NAME}:${BUILD_TAG}
-
                                 GitHub: ${GITHUB_REPO}
                                 Build URL: ${env.BUILD_URL}
-
                                 Services:
                                 - PHP-Apache: http://localhost:${env.PHP_EXTERNAL_PORT}
                                 - Adminer: http://localhost:${env.ADMINER_EXTERNAL_PORT}
@@ -584,12 +484,10 @@ pipeline {
                             subject: "PHP-MySQL App Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
                                 PHP-MySQL application build failed!
-
                                 Job: ${env.JOB_NAME}
                                 Branch: ${env.BRANCH_NAME ?: 'main'}
                                 Application Directory: ${APP_DIR}
                                 Build URL: ${env.BUILD_URL}
-
                                 Please check the console output for details:
                                 ${env.BUILD_URL}console
                             """,
@@ -613,8 +511,6 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
     try {
         echo "Deploying PHP-MySQL application to ${environment}"
         echo "Ports - PHP: ${phpPort}, MySQL: ${mysqlPort}, Adminer: ${adminerPort}"
-        
-        // Create deployment-specific environment file
         sh """
             cp .env .env.${environment}
             sed -i 's/PHP_EXTERNAL_PORT=${env.PHP_EXTERNAL_PORT}/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
@@ -624,59 +520,34 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             sed -i 's/PHP_ENV=production/PHP_ENV=${environment}/' .env.${environment}
             sed -i 's/MYSQL_APP_ENV=production/MYSQL_APP_ENV=${environment}/' .env.${environment}
         """
-        
-        def composeCmd = sh(
-            script: "docker compose version >/dev/null 2>&1 && echo 'docker compose' || echo 'docker-compose'",
-            returnStdout: true
-        ).trim()
-        
-        // Stop existing deployment
         sh """
-            ${composeCmd} --env-file .env.${environment} down -v || true
+            ${COMPOSE_CMD} --env-file .env.${environment} down -v || true
+            ${COMPOSE_CMD} --env-file .env.${environment} up -d --build
         """
-        
-        // Deploy new version
-        sh """
-            ${composeCmd} --env-file .env.${environment} up -d --build
-        """
-        
         echo "Waiting for deployment to stabilize..."
         sleep 60
-        
-        // Health checks with proper credentials
         echo "Performing health checks..."
         retry(15) {
             sleep(10)
             sh """
-                # Check PHP-Apache
                 curl -f http://localhost:${phpPort}/health -o /dev/null -s || curl -f http://localhost:${phpPort} -o /dev/null -s || exit 1
-                
-                # Check Adminer
                 curl -f http://localhost:${adminerPort} -o /dev/null -s || exit 1
-                
-                # Check MySQL with healthcheck user
-                ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h localhost -u ${env.MYSQL_HEALTHCHECK_USER} --password="${env.MYSQL_HEALTHCHECK_PASSWORD}" || exit 1
+                ${COMPOSE_CMD} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h localhost -u ${env.MYSQL_HEALTHCHECK_USER} --password="${env.MYSQL_HEALTHCHECK_PASSWORD}" || exit 1
             """
         }
-        
         echo "Successfully deployed to ${environment}"
         echo "Access URLs:"
         echo "  - PHP Application: http://localhost:${phpPort}"
         echo "  - Adminer (DB Admin): http://localhost:${adminerPort}"
         echo "  - MySQL: localhost:${mysqlPort}"
-        
-        // Show running containers
-        sh "${composeCmd} --env-file .env.${environment} ps"
-        
+        sh "${COMPOSE_CMD} --env-file .env.${environment} ps"
     } catch (Exception e) {
         echo "Deployment to ${environment} failed: ${e.getMessage()}"
         sh """
             echo "=== Container Status ==="
-            ${composeCmd} --env-file .env.${environment} ps || echo "No containers running"
-            
+            ${COMPOSE_CMD} --env-file .env.${environment} ps || echo "No containers running"
             echo "=== Container Logs ==="
-            ${composeCmd} --env-file .env.${environment} logs --tail=50 || echo "No logs available"
-            
+            ${COMPOSE_CMD} --env-file .env.${environment} logs --tail=50 || echo "No logs available"
             echo "=== System Information ==="
             docker system df || echo "Could not get system info"
         """
