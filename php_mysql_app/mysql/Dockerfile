@@ -13,9 +13,9 @@ ARG MYSQL_BASH_SHELL=/bin/bash
 ARG MYSQL_APP_DIR=/sqldb
 ARG MYSQL_MOUNT1=/sqldb/data
 ARG MYSQL_MOUNT2=/sqldb/logs
-ARG MYSQL_ROOT_PASSWORD=rootpass123!@#
+ARG MYSQL_ROOT_PASSWORD=rootpass123
 ARG MYSQL_DATABASE=myappdb
-ARG MYSQL_PASSWORD=MyAppUserPass456!@#
+ARG MYSQL_PASSWORD=MyAppUserPass456
 ARG MYSQL_USER=sqluser
 
 # Set runtime environment variables from ARGs
