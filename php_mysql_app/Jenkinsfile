@@ -149,10 +149,11 @@ pipeline {
                     dir(APP_DIR) {
                         sh """
                             # Create volume directories as specified in .env
-                            sudo mkdir -p ./volumes/php_data ./volumes/php_logs
-                            sudo mkdir -p ./volumes/mysql_data ./volumes/mysql_logs
-                            sudo chmod 755 ./volumes/php_data ./volumes/php_logs || true
-                            sudo chmod 755 ./volumes/mysql_data ./volumes/mysql_logs || true
+                            mkdir -p ./volumes/{php_data,php_logs,mysql_data,mysql_logs} || true
+                            # Only change permissions if we have the rights
+                            chmod 755 ./volumes/* || true
+                            # Verify directories exist
+                            ls -la ./volumes/
                             
                             # Clean up any existing containers
                             docker compose down -v 2>/dev/null || docker-compose down -v 2>/dev/null || echo "No compose services to stop"
