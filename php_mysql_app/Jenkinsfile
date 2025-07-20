@@ -36,7 +36,6 @@ pipeline {
                         echo "Working directory: ${pwd()}"
                         
                         // Show current working directory and contents
-                         sh " cd ${APP_DIR} "
                          sh "pwd && ls -la"
                         
                         echo "Checking Docker environment..."
@@ -48,6 +47,7 @@ pipeline {
                         
                         echo "Checking project structure..."
                         sh """
+                            cd ${APP_DIR}
                             ls -la docker-compose.yml .env  Jenkinsfile || echo 'Docker Compose files not found'
                             ls -la ./mysql/ ./mysql/config ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Some project directories not found'
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
