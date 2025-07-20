@@ -47,11 +47,20 @@ pipeline {
                         
                         echo "Checking project structure..."
                         sh """
-                            cd ${APP_DIR}
-                            ls -la docker-compose.yml .env  Jenkinsfile || echo 'Docker Compose files not found'
-                            ls -la ./mysql/ ./mysql/config ./php-apache/ ./php-apache/src ./php-apache/apache-config ./php-apache/php-config || echo 'Some project directories not found'
+                            ls -la docker-compose.yml || echo ' docker-compose.yml files not found'
+                            ls -la .env  || echo '.env files not found'
+                            ls -la Jenkinsfile || echo 'Jenkinsfile files not found'
+                            ls -la ./mysql/ || echo ' /mysql  directories not found'
+                            ls -la ./mysql/config || echo ' /mysql/config  directories not found'
+                            ls -la ./php-apache/ || echo ' /php-apache/ directories not found'
+                            ls -la ./php-apache/src || echo ' /src directories not found'
+                            ls -la ./php-apache/apache-config || echo ' apache-config project directories not found'
+                            ls -la ./php-apache/php-config || echo ' php-config project directories not found'
                             ls -la docker-compose.yml .env || echo 'Docker Compose files not found'
-                            ls -la ./mysql/Dockerfile ./php-apache/Dockerfile || echo 'Some Dockerfiles not found'
+                            ls -la ./mysql/Dockerfile || echo 'Some mysql Dockerfiles not found'
+                            ls -la ./mysql/.env || echo 'Some env files not found'
+                            ls -la ./php-apache/Dockerfile || echo 'Some PHP Dockerfiles not found'
+                            ls -la ./php-apache/.env || echo 'Some env files not found'
                         """
                     }
                 }
