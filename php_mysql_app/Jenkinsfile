@@ -271,8 +271,9 @@ pipeline {
                             throw e
                         } finally {
                             sh """
-                                ${COMPOSE_CMD} --env-file .env.test down -v || true
-                                rm -f .env.test || true
+                               docker ps -a || true
+                               docker logs mysql-project || true
+                               docker logs mysql-project || true
                             """
                         }
                     }
