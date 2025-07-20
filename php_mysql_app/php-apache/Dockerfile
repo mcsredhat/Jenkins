@@ -15,9 +15,9 @@ ARG hostname=php-apache-host
 ARG PHP_ENV=production
 ARG HEALTH_URL="curl -f http://localhost:8088"
 ARG VAR_RUN_PATH=/var/run/apache2
-ARG CP_PHP_SRC=./php-apache/src
-ARG CP_PHP_CFG=./php-apache/php-config
-ARG CP_APACHE_CFG=./php-apache/apache-config
+ARG CP_PHP_SRC=php-apache/src
+ARG CP_PHP_CFG=php-apache/php-config
+ARG CP_APACHE_CFG=php-apache/apache-config
 ARG VAR_LOGS=/var/log/apache2
 
 # Create ENV variables
