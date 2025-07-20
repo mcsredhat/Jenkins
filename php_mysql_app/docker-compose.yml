@@ -130,10 +130,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 512M
           cpus: '0.5'
         reservations:
-          memory: 64M
+          memory: 256M
           cpus: '0.25'
     ulimits:
       nofile:
