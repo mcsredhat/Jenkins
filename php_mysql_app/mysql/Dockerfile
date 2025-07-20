@@ -40,13 +40,14 @@ ENV MYSQL_VERSION=${MYSQL_VERSION} \
 LABEL maintainer="farajassulai@gmail.com"
 LABEL environment=${MYSQL_APP_ENV}
 LABEL description="MySQL database server with custom sqluser and configuration"
-LABEL date-created="2025-06-19"
+LABEL date-created="2025-07-20"
 LABEL version=${MYSQL_VERSION}
 
 # Create necessary directories with proper permissions
-RUN mkdir -p ${MYSQL_APP_DIR} ${MYSQL_MOUNT1} ${MYSQL_MOUNT2} /var/log/mysql && \
-    chown -R mysql:mysql ${MYSQL_APP_DIR} ${MYSQL_MOUNT1} ${MYSQL_MOUNT2} /var/log/mysql && \
-    chmod 755 ${MYSQL_APP_DIR} ${MYSQL_MOUNT1} ${MYSQL_MOUNT2} && \
+# Note: Keep MySQL's default data directory structure
+RUN mkdir -p ${MYSQL_APP_DIR} ${MYSQL_MOUNT2} /var/log/mysql && \
+    chown -R mysql:mysql ${MYSQL_APP_DIR} ${MYSQL_MOUNT2} /var/log/mysql && \
+    chmod 755 ${MYSQL_APP_DIR} ${MYSQL_MOUNT2} && \
     chmod 755 /var/log/mysql
 
 # Copy configuration files from mysql/src directory
@@ -59,8 +60,8 @@ RUN chown mysql:mysql /etc/mysql/conf.d/custom.cnf && \
     chown mysql:mysql /docker-entrypoint-initdb.d/init.sql && \
     chmod 644 /docker-entrypoint-initdb.d/init.sql
 
-# Create volume mount points
-VOLUME ["${MYSQL_MOUNT1}", "${MYSQL_MOUNT2}", "/var/lib/mysql"]
+# Create volume mount points (use MySQL's default data directory)
+VOLUME ["${MYSQL_MOUNT2}", "/var/lib/mysql"]
 
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
