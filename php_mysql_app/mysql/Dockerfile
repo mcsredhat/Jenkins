@@ -49,6 +49,7 @@ WORKDIR ${APP_DIR}
 # Create necessary directories, user, group and set permissions
 RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     useradd -u ${USER_ID} -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME} && \
+    usermod -a -G 999 ${USER_NAME} && \
     mkdir -p ${APP_DIR} ${MOUNT1} ${MOUNT2} /etc/mysql/conf.d && \
     chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${MOUNT1} ${MOUNT2} && \
     chmod 755 ${APP_DIR} ${MOUNT1} ${MOUNT2}
@@ -68,6 +69,8 @@ VOLUME ["${MOUNT1}", "${MOUNT2}", "/var/lib/mysql"]
 
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER ${USER_NAME}
 
 # IMPORTANT: MySQL containers must run as root user for proper database initialization
 # The official MySQL image handles security internally
