@@ -272,7 +272,7 @@ pipeline {
                         } finally {
                             sh """
                                docker ps -a || true
-                               docker logs mysql-project || true
+                               docker logs my_php_apache || true
                                docker logs mysql-project || true
                             """
                         }
