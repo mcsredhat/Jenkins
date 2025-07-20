@@ -1,19 +1,19 @@
-
 -- MySQL Initialization Script
 -- This script runs automatically when the container starts for the first time
 
--- Create additional databases if needed
--- CREATE DATABASE IF NOT EXISTS `additional_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Note: The main database and user are created automatically by the official MySQL image
+-- using MYSQL_DATABASE, MYSQL_USER, and MYSQL_PASSWORD environment variables
 
 -- Grant additional privileges to the application user
+-- Using the correct database name from .env (myappdb)
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES
-ON `myappdb`.* TO 'appuser'@'%';
+ON `myappdb`.* TO 'sqluser'@'%';
 
 -- Create additional users if needed
 -- CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
--- GRANT SELECT ON `mydb`.* TO 'readonly_user'@'%';
+-- GRANT SELECT ON `myappdb`.* TO 'readonly_user'@'%';
 
--- Create some sample tables (optional)
+-- Use the correct database name
 USE `myappdb`;
 
 -- Sample users table
@@ -53,4 +53,3 @@ FLUSH PRIVILEGES;
 
 -- Display success message
 SELECT 'Database initialization completed successfully!' AS message;
-```
