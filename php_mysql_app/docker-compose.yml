@@ -1,33 +1,41 @@
-
 version: "3.8"
 
 services:
   php-apache:
     build:
-      context: ./php-apache
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: php-apache/Dockerfile
       args:
-        PHP_VERSION: ${PHP_VERSION}
-        PHP_USER_ID: ${PHP_USER_ID}
-        PHP_USER_NAME: ${PHP_USER_NAME}
-        PHP_GROUP_ID: ${PHP_GROUP_ID}
-        PHP_GROUP_NAME: ${PHP_GROUP_NAME}
-        PHP_DIR_PATH: ${PHP_DIR_PATH}
-        PHP_APP_PORT: ${PHP_APP_PORT}
-        PHP_MOUNT1: ${PHP_MOUNT1}
-        PHP_MOUNT2: ${PHP_MOUNT2}
-        PHP_SHELL: ${PHP_SHELL}
-        PHP_HOSTNAME: ${PHP_HOSTNAME}
+        PHPVER: ${PHP_VERSION}
+        USER_ID: ${PHP_USER_ID}
+        USER_NAME: ${PHP_USER_NAME}
+        GROUP_ID: ${PHP_GROUP_ID}
+        GROUP_NAME: ${PHP_GROUP_NAME}
+        DIR_PATH: ${PHP_DIR_PATH}
+        APP_PORT: ${PHP_APP_PORT}
+        MOUNT1: ${PHP_MOUNT1}
+        MOUNT2: ${PHP_MOUNT2}
+        SHELL: ${PHP_SHELL}
+        HOSTNAME: ${PHP_HOSTNAME}
         PHP_ENV: ${PHP_ENV}
-        PHP_HEALTH_URL: ${PHP_HEALTH_URL}
-        PHP_VAR_RUN_PATH: ${PHP_VAR_RUN_PATH}
-        PHP_CP_SRC: ${PHP_CP_SRC}
-        PHP_CP_PHP_CFG: ${PHP_CP_PHP_CFG}
-        PHP_CP_APACHE_CFG: ${PHP_CP_APACHE_CFG}
-        PHP_VAR_LOGS: ${PHP_VAR_LOGS}
-        TZ: ${TZ}
+        HEALTH_URL: ${PHP_HEALTH_URL}
+        VAR_RUN_PATH: ${PHP_VAR_RUN_PATH}
+        CP_PHP_SRC: ${PHP_CP_SRC}
+        CP_PHP_CFG: ${PHP_CP_PHP_CFG}
+        CP_APACHE_CFG: ${PHP_CP_APACHE_CFG}
+        VAR_LOGS: ${PHP_VAR_LOGS}
     container_name: my_php_apache
     hostname: ${PHP_HOSTNAME}
+    labels:
+      - "maintainer=${MAINTAINER}"
+      - "app=php-apache-app"
+      - "service=phpapache"
+      - "tier=application"
+      - "environment=${PHP_ENV}"
+      - "maintainer=${MAINTAINER_EMAIL}"
+      - "description=${APP_DESCRIPTION}"
+      - "date-created=${DATE_CREATED}"
+      - "version=${PHP_VERSION}"
     environment:
       USER_NAME: ${PHP_USER_NAME}
       USER_ID: ${PHP_USER_ID}
@@ -40,16 +48,20 @@ services:
       SHELL_PATH: ${PHP_SHELL}
       HOSTNAME: ${PHP_HOSTNAME}
       HEALTH_URL: ${PHP_HEALTH_URL}
-      APP_ENV: ${PHP_ENV}
       VAR_RUN: ${PHP_VAR_RUN_PATH}
       VAR_LOGS: ${PHP_VAR_LOGS}
-      CP_SRC: ${PHP_CP_SRC}
-      CP_PHP_CFG: ${PHP_CP_PHP_CFG}
       TZ: ${TZ}
+      # Database connection info for PHP
+      DB_HOST: mysql-db
+      DB_PORT: ${MYSQL_APP_PORT}
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     networks:
-      - web-app-net
+      - app-network
     dns:
       - ${DNS_PRIMARY}
       - ${DNS_SECONDARY}
@@ -58,15 +70,14 @@ services:
     volumes:
       - php_data:${PHP_MOUNT1}
       - php_logs:${PHP_MOUNT2}
-      - ./php-apache/src:/var/www/html/
     deploy:
       resources:
         limits:
           memory: ${PHP_MEMORY_LIMIT}
-          cpus: ${PHP_CPU_LIMIT}
+          cpus: '${PHP_CPU_LIMIT}'
         reservations:
           memory: ${PHP_MEMORY_RESERVATION}
-          cpus: ${PHP_CPU_RESERVATION}
+          cpus: '${PHP_CPU_RESERVATION}'
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
@@ -75,7 +86,11 @@ services:
         soft: ${ULIMIT_NPROC_SOFT}
         hard: ${ULIMIT_NPROC_HARD}
     healthcheck:
-      test: ["CMD-SHELL", "curl -f ${PHP_HEALTH_URL} || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f http://localhost:${PHP_APP_PORT}${PHP_HEALTH_URL} || exit 1"
+        ]
       interval: ${HEALTHCHECK_INTERVAL}
       timeout: ${HEALTHCHECK_TIMEOUT}
       retries: ${HEALTHCHECK_RETRIES}
@@ -84,8 +99,8 @@ services:
       driver: json-file
       options:
         max-size: ${LOG_MAX_SIZE}
-        max-file: ${LOG_MAX_FILES}
-        compress: ${LOG_COMPRESS}
+        max-file: "${LOG_MAX_FILES}"
+        compress: "${LOG_COMPRESS}"
     security_opt:
       - "no-new-privileges:true"
     cap_drop:
@@ -97,84 +112,89 @@ services:
       - DAC_OVERRIDE
       - FOWNER
       - FSETID
-    user: "${PHP_USER_ID}:${PHP_GROUP_ID}"
     restart: unless-stopped
-    working_dir: /var/www/html/
+    working_dir: ${PHP_DIR_PATH}
 
   adminer:
     image: adminer:latest
     container_name: adminer
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     ports:
-      - "${ADMINER_EXTERNAL_PORT}:8080"
+      - "${ADMINER_EXTERNAL_PORT}:${ADMINER_INTERNAL_PORT}"
     networks:
-      - web-app-net
+      - app-network
     environment:
-      ADMINER_DEFAULT_SERVER: mysql-db
       TZ: ${TZ}
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.25'
+    ulimits:
+      nofile:
+        soft: ${ULIMIT_NOFILE_SOFT}
+        hard: ${ULIMIT_NOFILE_HARD}
+      nproc:
+        soft: ${ULIMIT_NPROC_SOFT}
+        hard: ${ULIMIT_NPROC_HARD}
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: ${LOG_MAX_SIZE}
-        max-file: ${LOG_MAX_FILES}
-        compress: ${LOG_COMPRESS}
 
   mysql-db:
     build:
-      context: ./mysql
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: mysql/Dockerfile
       args:
-        MYSQL_VERSION: ${MYSQL_VERSION}
-        MYSQL_USER_ID: ${MYSQL_USER_ID}
-        MYSQL_USER_NAME: ${MYSQL_USER_NAME}
-        MYSQL_GROUP_ID: ${MYSQL_GROUP_ID}
-        MYSQL_GROUP_NAME: ${MYSQL_GROUP_NAME}
-        MYSQL_APP_PORT: ${MYSQL_APP_PORT}
-        MYSQL_APP_ENV: ${MYSQL_APP_ENV}
-        MYSQL_BASH_SHELL: ${MYSQL_BASH_SHELL}
-        MYSQL_APP_DIR: ${MYSQL_APP_DIR}
-        MYSQL_MOUNT1: ${MYSQL_MOUNT1}
-        MYSQL_MOUNT2: ${MYSQL_MOUNT2}
+        SQLVER: ${MYSQL_VERSION}
+        USER_ID: ${MYSQL_USER_ID}
+        USER_NAME: ${MYSQL_USER_NAME}
+        GROUP_ID: ${MYSQL_GROUP_ID}
+        GROUP_NAME: ${MYSQL_GROUP_NAME}
+        APP_PORT: ${MYSQL_APP_PORT}
+        APP_ENV: ${MYSQL_APP_ENV}
+        BASH_SHELL: ${MYSQL_BASH_SHELL}
+        APP_DIR: ${MYSQL_APP_DIR}
+        MOUNT1: ${MYSQL_MOUNT1}
+        MOUNT2: ${MYSQL_MOUNT2}
         MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
         MYSQL_DATABASE: ${MYSQL_DATABASE}
-        MYSQL_USER: ${MYSQL_USER}
         MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-        CP_SQL_CFG: ${CP_SQL_CFG}
-        TZ: ${TZ}
-        MYSQL_CHARSET: ${MYSQL_CHARSET}
-        MYSQL_COLLATION: ${MYSQL_COLLATION}
-        MYSQL_LOWER_CASE_TABLE_NAMES: ${MYSQL_LOWER_CASE_TABLE_NAMES}
-        MYSQL_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS}
-        MYSQL_INNODB_BUFFER_POOL_SIZE: ${MYSQL_INNODB_BUFFER_POOL_SIZE}
-    container_name: mysql-db
-    hostname: mysql-host
+        MYSQL_USER: ${MYSQL_USER}
+    container_name: mysql-project
+    # FIXED: Changed hostname to match PHP connection
+    hostname: mysql-db
+    labels:
+      - "maintainer=${MAINTAINER}"
+      - "app=mysql-database"
+      - "service=database"
+      - "tier=database"
+      - "environment=${MYSQL_APP_ENV}"
+      - "version=${MYSQL_VERSION}"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_HEALTHCHECK_USER: ${MYSQL_HEALTHCHECK_USER}
+      MYSQL_HEALTHCHECK_PASSWORD: ${MYSQL_HEALTHCHECK_PASSWORD}
       SQLVER: ${MYSQL_VERSION}
-      USER_ID: ${MYSQL_USER_ID}
+      USER_ID: "${MYSQL_USER_ID}"
       USER_NAME: ${MYSQL_USER_NAME}
-      GROUP_ID: ${MYSQL_GROUP_ID}
+      GROUP_ID: "${MYSQL_GROUP_ID}"
       GROUP_NAME: ${MYSQL_GROUP_NAME}
-      APP_PORT: ${MYSQL_APP_PORT}
+      APP_PORT: "${MYSQL_APP_PORT}"
       APP_ENV: ${MYSQL_APP_ENV}
       BASH_SHELL: ${MYSQL_BASH_SHELL}
       APP_DIR: ${MYSQL_APP_DIR}
       MOUNT1: ${MYSQL_MOUNT1}
       MOUNT2: ${MYSQL_MOUNT2}
       TZ: ${TZ}
-      MYSQL_CHARSET: ${MYSQL_CHARSET}
-      MYSQL_COLLATION: ${MYSQL_COLLATION}
-      MYSQL_LOWER_CASE_TABLE_NAMES: ${MYSQL_LOWER_CASE_TABLE_NAMES}
-      MYSQL_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS}
-      MYSQL_INNODB_BUFFER_POOL_SIZE: ${MYSQL_INNODB_BUFFER_POOL_SIZE}
     networks:
-      - web-app-net
+      - app-network
     dns:
       - ${DNS_PRIMARY}
       - ${DNS_SECONDARY}
@@ -187,10 +207,10 @@ services:
       resources:
         limits:
           memory: ${MYSQL_MEMORY_LIMIT}
-          cpus: ${MYSQL_CPU_LIMIT}
+          cpus: '${MYSQL_CPU_LIMIT}'
         reservations:
           memory: ${MYSQL_MEMORY_RESERVATION}
-          cpus: ${MYSQL_CPU_RESERVATION}
+          cpus: '${MYSQL_CPU_RESERVATION}'
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
@@ -199,7 +219,11 @@ services:
         soft: ${ULIMIT_NPROC_SOFT}
         hard: ${ULIMIT_NPROC_HARD}
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root --password=\"${MYSQL_ROOT_PASSWORD}\" || (echo 'Health check failed' >> /sqldb/logs/mysql_health.log && exit 1)"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -u ${MYSQL_HEALTHCHECK_USER} --password=\"${MYSQL_HEALTHCHECK_PASSWORD}\" || exit 1"
+        ]
       interval: ${HEALTHCHECK_INTERVAL}
       timeout: ${HEALTHCHECK_TIMEOUT}
       retries: ${HEALTHCHECK_RETRIES}
@@ -208,8 +232,8 @@ services:
       driver: json-file
       options:
         max-size: ${LOG_MAX_SIZE}
-        max-file: ${LOG_MAX_FILES}
-        compress: ${LOG_COMPRESS}
+        max-file: "${LOG_MAX_FILES}"
+        compress: "${LOG_COMPRESS}"
     security_opt:
       - "no-new-privileges:true"
     cap_drop:
@@ -222,7 +246,6 @@ services:
       - FOWNER
       - FSETID
       - SYS_RESOURCE
-    user: "${MYSQL_USER_ID}:${MYSQL_GROUP_ID}"
     restart: unless-stopped
     working_dir: ${MYSQL_APP_DIR}
 
@@ -232,30 +255,30 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${PHP_DATA_PATH}
+      device: ${PHP_DATA_VOLUME}
   php_logs:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PHP_LOGS_PATH}
+      device: ${PHP_LOGS_VOLUME}
   mysql_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MYSQL_DATA_PATH}
+      device: ${MYSQL_DATA_VOLUME}
   mysql_logs:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MYSQL_LOGS_PATH}
+      device: ${MYSQL_LOGS_VOLUME}
 
 networks:
-  web-app-net:
+  app-network:
     driver: bridge
     ipam:
       config:
         - subnet: ${NETWORK_SUBNET}
-```
+    name: ${NETWORK_NAME}
