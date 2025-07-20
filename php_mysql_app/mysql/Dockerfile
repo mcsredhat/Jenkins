@@ -70,7 +70,7 @@ VOLUME ["${MOUNT1}", "${MOUNT2}", "/var/lib/mysql"]
 # Set shell
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-USER ${USER_NAME}
+#USER ${USER_NAME}
 
 # IMPORTANT: MySQL containers must run as root user for proper database initialization
 # The official MySQL image handles security internally
