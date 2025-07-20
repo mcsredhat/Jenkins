@@ -281,8 +281,5 @@ networks:
     ipam:
       config:
         - subnet: ${NETWORK_SUBNET}
-<<<<<<< HEAD
     name: ${NETWORK_NAME}
-=======
-    name: ${NETWORK_NAME}
->>>>>>> 85e13c9f2938167e3cae8642a220ff8d4465c36b
+
