@@ -51,4 +51,4 @@ INSERT IGNORE INTO `users` (`username`, `email`, `password_hash`) VALUES
 FLUSH PRIVILEGES;
 
 -- Display success message
-SELECT 'Database initialization completed successfully!' AS message;
+SELECT 'Database initialization completed successfully!' AS message; 
