@@ -66,7 +66,9 @@ RUN apt-get update && \
     useradd -u ${USER_ID} -M -g ${GROUP_NAME} -s ${SHELL_PATH} ${USER_NAME} && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-
+# Enable required Apache modules
+RUN a2enmod rewrite headers expires deflate SSL
+RUN docker-php-ext-install mysqli pdo pdo_mysql
 # Copy configuration files
 COPY ${CP_APACHE_CFG}/ports.conf /etc/apache2/ports.conf
 COPY ${CP_APACHE_CFG}/000-default.conf /etc/apache2/sites-available/000-default.conf
@@ -84,6 +86,8 @@ RUN chown -R ${USER_NAME}:${GROUP_NAME} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH
     chmod 644 /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && \
     chmod 644 /usr/local/etc/php/php.ini && \
     chown -R www-data:www-data ${VAR_LOGS}
+RUN chown -R www-data:www-data /var/www/html
+RUN chmod -R 755 /var/www/html
 
 # Enable Apache modules
 RUN a2enmod rewrite headers expires deflate
