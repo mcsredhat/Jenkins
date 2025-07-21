@@ -61,13 +61,15 @@ pipeline {
                     dir("${APP_DIR}") {
                         sh """
                             # Create necessary directories as specified in .env
-                            mkdir -p php-apache/src mysql ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs
+                            mkdir -p php-apache/src mysql ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs mysql_data1 ./mysql/init
+    networks:
                             
                             # Try to set permissions with sudo, fall back if it fails
                             sudo chmod 755 ./volumes || echo "Warning: Could not set permissions on ./volumes with sudo"
                             sudo chmod 755 ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs || echo "Warning: Could not set permissions on volume subdirectories with sudo"
                             sudo chown -R jenkins:jenkins ./volumes || echo "Warning: Could not change ownership with sudo"
-                            
+                            sudo chmod 755 mysql_data1  || echo "Warning: Could not change ownership with sudo"
+                             sudo chmod 755 ./mysql/init || echo "Warning: Could not change ownership with sudo"
                             # Alternative: Use Docker to create directories with correct permissions
                             docker run --rm -v \$(pwd)/volumes:/volumes alpine:latest sh -c "
                                 chown -R 1000:1000 /volumes || echo 'Warning: Could not change ownership'
