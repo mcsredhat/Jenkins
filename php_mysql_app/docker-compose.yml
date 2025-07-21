@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   php-apache:
@@ -130,10 +129,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 512M
           cpus: '0.5'
         reservations:
-          memory: 64M
+          memory: 256M
           cpus: '0.25'
     ulimits:
       nofile:
@@ -165,7 +164,6 @@ services:
         MYSQL_PASSWORD: ${MYSQL_PASSWORD}
         MYSQL_USER: ${MYSQL_USER}
     container_name: mysql-project
-    # FIXED: Changed hostname to match PHP connection
     hostname: mysql-db
     labels:
       - "maintainer=${MAINTAINER}"
@@ -175,12 +173,13 @@ services:
       - "environment=${MYSQL_APP_ENV}"
       - "version=${MYSQL_VERSION}"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_HEALTHCHECK_USER: ${MYSQL_HEALTHCHECK_USER}
-      MYSQL_HEALTHCHECK_PASSWORD: ${MYSQL_HEALTHCHECK_PASSWORD}
+      # FIXED: Properly quoted MySQL environment variables
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE}"
+      MYSQL_USER: "${MYSQL_USER}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+      MYSQL_HEALTHCHECK_USER: "${MYSQL_HEALTHCHECK_USER}"
+      MYSQL_HEALTHCHECK_PASSWORD: "${MYSQL_HEALTHCHECK_PASSWORD}"
       SQLVER: ${MYSQL_VERSION}
       USER_ID: "${MYSQL_USER_ID}"
       USER_NAME: ${MYSQL_USER_NAME}
@@ -218,11 +217,12 @@ services:
       nproc:
         soft: ${ULIMIT_NPROC_SOFT}
         hard: ${ULIMIT_NPROC_HARD}
+    # FIXED: Simplified healthcheck using the same password variable
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h localhost -u ${MYSQL_HEALTHCHECK_USER} --password=\"${MYSQL_HEALTHCHECK_PASSWORD}\" || exit 1"
+          "mysqladmin ping -h localhost -u ${MYSQL_HEALTHCHECK_USER} --password='${MYSQL_HEALTHCHECK_PASSWORD}' || exit 1"
         ]
       interval: ${HEALTHCHECK_INTERVAL}
       timeout: ${HEALTHCHECK_TIMEOUT}
@@ -281,8 +281,4 @@ networks:
     ipam:
       config:
         - subnet: ${NETWORK_SUBNET}
-<<<<<<< HEAD
     name: ${NETWORK_NAME}
-=======
-    name: ${NETWORK_NAME}
->>>>>>> 85e13c9f2938167e3cae8642a220ff8d4465c36b

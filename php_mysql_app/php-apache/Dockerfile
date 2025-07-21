@@ -60,12 +60,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy configuration files
+# Copy configuration files (corrected paths)
 COPY ${CP_APACHE_CFG}/ports.conf /etc/apache2/ports.conf
 COPY ${CP_APACHE_CFG}/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY ${CP_PHP_CFG}/php.ini /usr/local/etc/php/php.ini
 
-# Copy application source files
+# Copy application source files (corrected path)
 COPY ${CP_PHP_SRC}/index.php ${DIR_PATH}/
 
 # Set proper ownership and permissions
