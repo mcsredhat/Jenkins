@@ -82,7 +82,7 @@ VOLUME ["${MOUNT1}", "${MOUNT2}", "/var/lib/mysql"]
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Switch to non-root user
-#USER ${USER_NAME}
+USER ${USER_NAME}
 
 # STOPSIGNAL
 STOPSIGNAL SIGTERM
