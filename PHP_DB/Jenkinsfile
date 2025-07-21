@@ -188,7 +188,8 @@ pipeline {
                         sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=8084/' .env.test
                         
                         # Update network subnet to avoid conflicts
-                        sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\/24/' .env.test
+                        # Update network subnet to avoid conflicts
+                        sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\\/24/' .env.test
                         
                         # Set test compose project name
                         sed -i 's/COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=php-mysql-app-test/' .env.test
