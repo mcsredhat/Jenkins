@@ -67,7 +67,6 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-
 # Copy configuration files
 COPY ${CP_APACHE_CFG}/ports.conf /etc/apache2/ports.conf
 COPY ${CP_APACHE_CFG}/000-default.conf /etc/apache2/sites-available/000-default.conf
@@ -88,7 +87,7 @@ RUN chown -R ${USER_NAME}:${GROUP_NAME} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH
 
 # Enable Apache modules
 RUN a2enmod rewrite headers expires deflate
-RUN a2dismod mpm_event mpm_worker && a2enmod mpm_prefork
+
 # Enable the default site
 RUN a2ensite 000-default
 
