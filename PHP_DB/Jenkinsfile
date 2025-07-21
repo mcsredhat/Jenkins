@@ -172,7 +172,7 @@ pipeline {
                             sh """
                                 cp .env .env.test
                                 
-                                sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=test_rootpass/' .env.test
+                                sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass123/' .env.test
                                 sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=test_db/' .env.test
                                 sed -i 's/MYSQL_USER=.*/MYSQL_USER=test_user/' .env.test
                                 sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=test_password/' .env.test
