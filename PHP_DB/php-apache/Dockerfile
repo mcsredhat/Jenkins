@@ -106,4 +106,4 @@ HEALTHCHECK --interval=30s \
 EXPOSE ${APP_PORT}
 
 # Run command
-CMD ["apache2-foreground"]
+CMD ["apache2-foreground"] 
