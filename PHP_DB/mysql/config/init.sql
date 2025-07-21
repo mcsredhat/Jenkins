@@ -1,7 +1,7 @@
 -- MySQL Initialization Script
 -- Runs automatically when the MySQL container starts for the first time
 
--- Update root user password and host permissions
+-- Set root password and allow connections from any host
 ALTER USER 'root'@'localhost' IDENTIFIED BY 'rootpass_staging';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY 'rootpass_staging' WITH GRANT OPTION;
 
