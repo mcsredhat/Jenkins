@@ -1,4 +1,4 @@
-#version: "3.8"
+version: "3.8"
 
 services:
   php-apache:
@@ -152,7 +152,6 @@ services:
     volumes:
       - mysql_data:${MYSQL_MOUNT1}
       - mysql_logs:${MYSQL_MOUNT2}
-      - ./mysql/config/init.sql:/docker-entrypoint-initdb.d/init.sql
     deploy:
       resources:
         limits:
