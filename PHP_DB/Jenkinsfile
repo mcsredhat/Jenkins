@@ -4,13 +4,13 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'https://index.docker.io/v1/'
         DOCKER_USERNAME = 'farajassulai'
-        DOCKER_REPO = 'php-mysql-pro'
+        DOCKER_REPO = 'php-mysql-app'
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
         CONTAINER_NAME = "php-mysql-project"
         TEST_CONTAINER_NAME = "php-mysql-test-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        APP_DIR = "PHP_DB"
+        APP_DIR = "php_mysql_app"
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
