@@ -25,7 +25,7 @@ services:
         PHP_CP_APACHE_CFG: ${PHP_CP_APACHE_CFG}
         PHP_VAR_LOGS: ${PHP_VAR_LOGS}
         TZ: ${TZ}
-    container_name: my_php_apache
+    container_name: ${PHP_CONTAINER_NAME:-php-apache}
     hostname: ${PHP_HOSTNAME}
     environment:
       USER_NAME: ${PHP_USER_NAME}
@@ -45,8 +45,15 @@ services:
       CP_SRC: ${PHP_CP_SRC}
       CP_PHP_CFG: ${PHP_CP_PHP_CFG}
       TZ: ${TZ}
+      # Database connection environment variables
+      MYSQL_HOST: ${MYSQL_HOST:-mysql-db}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     networks:
       - web-app-net
     dns:
@@ -102,9 +109,10 @@ services:
 
   adminer:
     image: adminer:latest
-    container_name: adminer
+    container_name: ${ADMINER_CONTAINER_NAME:-adminer}
     depends_on:
-      - mysql-db
+      mysql-db:
+        condition: service_healthy
     ports:
       - "${ADMINER_EXTERNAL_PORT}:8080"
     networks:
@@ -121,8 +129,8 @@ services:
         compress: ${LOG_COMPRESS}
 
   mysql-db:
-    image: mysql:8.0  # Use official image for reliability
-    container_name: mysql-db
+    image: mysql:${MYSQL_VERSION}
+    container_name: ${MYSQL_CONTAINER_NAME:-mysql-db}
     hostname: mysql-host
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -142,6 +150,12 @@ services:
       MOUNT1: ${MYSQL_MOUNT1}
       MOUNT2: ${MYSQL_MOUNT2}
       TZ: ${TZ}
+      # MySQL Performance Configuration
+      MYSQL_CHARSET: ${MYSQL_CHARSET:-utf8mb4}
+      MYSQL_COLLATION: ${MYSQL_COLLATION:-utf8mb4_unicode_ci}
+      MYSQL_LOWER_CASE_TABLE_NAMES: ${MYSQL_LOWER_CASE_TABLE_NAMES:-1}
+      MYSQL_MAX_CONNECTIONS: ${MYSQL_MAX_CONNECTIONS:-151}
+      MYSQL_INNODB_BUFFER_POOL_SIZE: ${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
     networks:
       - web-app-net
     dns:
@@ -154,7 +168,6 @@ services:
       - mysql_logs:${MYSQL_MOUNT2}
       - mysql_data1:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d
-    networks:
     deploy:
       resources:
         limits:
@@ -223,6 +236,8 @@ volumes:
       type: none
       o: bind
       device: ${MYSQL_LOGS_PATH}
+  mysql_data1:
+    driver: local
 
 networks:
   web-app-net:
