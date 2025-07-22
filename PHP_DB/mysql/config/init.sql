@@ -1,19 +1,18 @@
 -- MySQL Initialization Script
 -- Runs automatically when the MySQL container starts for the first time
 
--- Set root password and allow connections from any host
-ALTER USER 'root'@'localhost' IDENTIFIED BY 'rootpass_staging';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY 'rootpass_staging' WITH GRANT OPTION;
+-- Create the application user with proper privileges
+CREATE USER IF NOT EXISTS 'appuser'@'%' IDENTIFIED BY 'MyAppUserPass456!@#';
 
--- Grant additional privileges to the application user
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES
-ON `myappdb`.* TO 'sqluser'@'%';
+-- Grant privileges to the application user on the specific database
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, LOCK TABLES, CREATE TEMPORARY TABLES, REFERENCES
+ON `myappdb`.* TO 'appuser'@'%';
 
--- Create additional users if needed
--- CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
--- GRANT SELECT ON `mydb`.* TO 'readonly_user'@'%';
+-- Create additional users if needed (commented out by default)
+-- CREATE USER IF NOT EXISTS 'readonly_user'@'%' IDENTIFIED BY 'readonly_pass';
+-- GRANT SELECT ON `myappdb`.* TO 'readonly_user'@'%';
 
--- Create some sample tables (optional)
+-- Switch to the application database
 USE `myappdb`;
 
 -- Sample users table
