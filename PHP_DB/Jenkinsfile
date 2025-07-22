@@ -69,10 +69,10 @@ pipeline {
                             sudo chmod -R u+w . || echo "Warning: Could not set write permissions for ${APP_DIR}"
                             
                             # Create necessary directories as specified in .env
-                            mkdir -p php-apache/src mysql/config mysql/init
-                            mkdir -p php-apache/apache-config php-apache/php-config
-                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs
-                            mkdir -p mysql_data1
+                            mkdir -p php-apache/src mysql/config mysql/init || true 
+                            mkdir -p php-apache/apache-config php-apache/php-config || true 
+                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs || true 
+                            mkdir -p mysql_data1 || true 
                             
                             # Set permissions with fallback
                             chmod -R 755 ./volumes ./volumes/test ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not set permissions"
