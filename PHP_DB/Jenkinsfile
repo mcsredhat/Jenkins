@@ -69,14 +69,21 @@ pipeline {
                             sudo chmod -R u+w . || echo "Warning: Could not set write permissions for ${APP_DIR}"
                             
                             # Create necessary directories as specified in .env
-                            mkdir -p php-apache/src mysql/config mysql/init || true 
-                            mkdir -p php-apache/apache-config php-apache/php-config || true
-                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs || true
-                            mkdir -p mysql_data1 || true
+                            mkdir -p php-apache/src mysql/config mysql/init
+                            mkdir -p php-apache/apache-config php-apache/php-config
+                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs
+                            mkdir -p mysql_data1
                             
                             # Set permissions with fallback
                             chmod -R 755 ./volumes ./volumes/test ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not set permissions"
                             chown -R \$(whoami):\$(whoami) ./volumes mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not change ownership"
+                            
+                            # Validate .env exists
+                            if [ ! -f .env ]; then
+                                echo "Error: .env file not found in \$(pwd)"
+                                ls -la
+                                exit 1
+                            fi
                             
                             # Create Dockerfiles if they don't exist
                             if [ ! -f ./php-apache/Dockerfile ]; then
@@ -304,6 +311,13 @@ EOF
                                 # Ensure write permissions for .env-test
                                 touch .env-test && chmod 644 .env-test || { echo "Error: Cannot create or set permissions for .env-test"; exit 1; }
                                 
+                                # Validate .env exists before copying
+                                if [ ! -f .env ]; then
+                                    echo "Error: .env file not found in \$(pwd)"
+                                    ls -la
+                                    exit 1
+                                fi
+                                
                                 # Create .env-test from .env with test-specific settings
                                 cp .env .env-test || { echo "Error: Cannot copy .env to .env-test"; exit 1; }
                                 
@@ -333,17 +347,20 @@ EOF
                                 cat .env-test
                                 
                                 # Validate critical variables
-                                grep -q "MYSQL_ROOT_PASSWORD=test_rootpass" .env-test || { echo "Error: MYSQL_ROOT_PASSWORD not set correctly in .env-test"; exit 1; }
-                                grep -q "MYSQL_DATABASE=test_db" .env-test || { echo "Error: MYSQL_DATABASE not set correctly in .env-test"; exit 1; }
-                                grep -q "MYSQL_USER=test_user" .env-test || { echo "Error: MYSQL_USER not set correctly in .env-test"; exit 1; }
-                                grep -q "MYSQL_PASSWORD=test_password" .env-test || { echo "Error: MYSQL_PASSWORD not set correctly in .env-test"; exit 1; }
-                                grep -q "MYSQL_CONTAINER_NAME=mysql-db-test" .env-test || { echo "Error: MYSQL_CONTAINER_NAME not set correctly in .env-test"; exit 1; }
+                                grep -q "MYSQL_ROOT_PASSWORD=test_rootpass" .env-test || { echo "Error: MYSQL_ROOT_PASSWORD not set correctly in .env-test"; cat .env-test; exit 1; }
+                                grep -q "MYSQL_DATABASE=test_db" .env-test || { echo "Error: MYSQL_DATABASE not set correctly in .env-test"; cat .env-test; exit 1; }
+                                grep -q "MYSQL_USER=test_user" .env-test || { echo "Error: MYSQL_USER not set correctly in .env-test"; cat .env-test; exit 1; }
+                                grep -q "MYSQL_PASSWORD=test_password" .env-test || { echo "Error: MYSQL_PASSWORD not set correctly in .env-test"; cat .env-test; exit 1; }
+                                grep -q "MYSQL_CONTAINER_NAME=mysql-db-test" .env-test || { echo "Error: MYSQL_CONTAINER_NAME not set correctly in .env-test"; cat .env-test; exit 1; }
                             """
                             
                             // Extract test configuration
                             sh """
                                 # Ensure write permissions for test_config.env
                                 touch test_config.env && chmod 644 test_config.env || { echo "Error: Cannot create or set permissions for test_config.env"; exit 1; }
+                                
+                                # Debug: Check write permissions
+                                ls -l test_config.env || { echo "Error: test_config.env not accessible"; exit 1; }
                                 
                                 # Parse test_config.env
                                 echo "Creating test_config.env..."
@@ -365,11 +382,11 @@ EOF
                                 cat test_config.env
                                 
                                 # Validate critical variables
-                                grep -q "TEST_DB_ROOT_PASSWORD=test_rootpass" test_config.env || { echo "Error: TEST_DB_ROOT_PASSWORD not set correctly in test_config.env"; exit 1; }
-                                grep -q "TEST_DB_NAME=test_db" test_config.env || { echo "Error: TEST_DB_NAME not set correctly in test_config.env"; exit 1; }
-                                grep -q "TEST_DB_USER=test_user" test_config.env || { echo "Error: TEST_DB_USER not set correctly in test_config.env"; exit 1; }
-                                grep -q "TEST_DB_PASSWORD=test_password" test_config.env || { echo "Error: TEST_DB_PASSWORD not set correctly in test_config.env"; exit 1; }
-                                grep -q "TEST_MYSQL_CONTAINER=mysql-db-test" test_config.env || { echo "Error: TEST_MYSQL_CONTAINER not set correctly in test_config.env"; exit 1; }
+                                grep -q "TEST_DB_ROOT_PASSWORD=test_rootpass" test_config.env || { echo "Error: TEST_DB_ROOT_PASSWORD not set correctly in test_config.env"; cat test_config.env; exit 1; }
+                                grep -q "TEST_DB_NAME=test_db" test_config.env || { echo "Error: TEST_DB_NAME not set correctly in test_config.env"; cat test_config.env; exit 1; }
+                                grep -q "TEST_DB_USER=test_user" test_config.env || { echo "Error: TEST_DB_USER not set correctly in test_config.env"; cat test_config.env; exit 1; }
+                                grep -q "TEST_DB_PASSWORD=test_password" test_config.env || { echo "Error: TEST_DB_PASSWORD not set correctly in test_config.env"; cat test_config.env; exit 1; }
+                                grep -q "TEST_MYSQL_CONTAINER=mysql-db-test" test_config.env || { echo "Error: TEST_MYSQL_CONTAINER not set correctly in test_config.env"; cat test_config.env; exit 1; }
                                 
                                 # Source the test_config.env to set environment variables
                                 . ./test_config.env
@@ -420,7 +437,7 @@ EOF
                             }
                             
                             // Validate critical variables
-                            if (!testConfig.TEST_DB_ROOT_PASSWORD || testConfig.TEST_DB_ROOT_PASSWORD == 'null') {
+                            if (!testConfig.TEST_DB_ROOT_PASSWORD || testConfig.TEST_DB_ROOT_PASSWORD == 'null' || testConfig.TEST_DB_ROOT_PASSWORD == '') {
                                 error "TEST_DB_ROOT_PASSWORD is empty or null (value: ${testConfig.TEST_DB_ROOT_PASSWORD})"
                             }
                             if (!testConfig.TEST_MYSQL_CONTAINER || testConfig.TEST_MYSQL_CONTAINER != 'mysql-db-test') {
@@ -508,36 +525,41 @@ EOF
                                 echo "Current directory: \$(pwd)"
                                 echo "Environment files:"
                                 ls -la .env* test_config.env 2>/dev/null || echo 'No environment files found'
+                                cat .env 2>/dev/null || echo "Could not read .env"
                                 cat .env-test 2>/dev/null || echo "Could not read .env-test"
                                 cat test_config.env 2>/dev/null || echo "Could not read test_config.env"
                                 
                                 echo "=== Container Status ==="
-                                ${composeCmd} --env-file .env-test ps || echo 'Could not retrieve container status'
+                                ${composeCmd} --env-file .env-test ps 2>/dev/null || echo 'Could not retrieve container status'
                                 
                                 echo "=== MySQL Logs ==="
-                                ${composeCmd} --env-file .env-test logs mysql-db-test | tail -50 || echo 'Could not retrieve MySQL logs'
+                                ${composeCmd} --env-file .env-test logs mysql-db-test | tail -50 2>/dev/null || echo 'Could not retrieve MySQL logs'
                                 
                                 echo "=== PHP App Logs ==="
-                                ${composeCmd} --env-file .env-test logs php-apache-test | tail -50 || echo 'Could not retrieve PHP logs'
+                                ${composeCmd} --env-file .env-test logs php-apache-test | tail -50 2>/dev/null || echo 'Could not retrieve PHP logs'
                                 
                                 echo "=== Adminer Logs ==="
-                                ${composeCmd} --env-file .env-test logs adminer-test | tail -50 || echo 'Could not retrieve Adminer logs'
+                                ${composeCmd} --env-file .env-test logs adminer-test | tail -50 2>/dev/null || echo 'Could not retrieve Adminer logs'
                                 
                                 echo "=== Network Information ==="
                                 docker network ls
                                 docker ps -a | grep ${TEST_COMPOSE_PROJECT_NAME} || echo "No test containers found"
                                 
                                 echo "=== Port Status ==="
-                                netstat -tlnp | grep -E ":(8091|3308|8084)" || echo "No test ports found in use"
+                                netstat -tlnp | grep -E ":(8091|3308|8084)" 2>/dev/null || echo "No test ports found in use"
+                                
+                                echo "=== Permissions Check ==="
+                                ls -ld . ./volumes ./volumes/test 2>/dev/null || echo "Cannot access directories"
+                                ls -l .env .env-test test_config.env 2>/dev/null || echo "Cannot access environment files"
                             """
                             throw e
                         } finally {
                             sh """
                                 echo "Cleaning up test environment..."
-                                ${composeCmd} --env-file .env-test down -v --remove-orphans || true
-                                docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                                docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                                rm -f test_config.env .env-test || true
+                                ${composeCmd} --env-file .env-test down -v --remove-orphans 2>/dev/null || true
+                                docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || true
+                                docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || true
+                                rm -f test_config.env .env-test 2>/dev/null || true
                                 
                                 # Clean up any dangling containers and volumes
                                 docker container prune -f || true
@@ -638,7 +660,7 @@ EOF
                         } catch (Exception credError) {
                             echo "Docker Hub credentials not found, attempting push without registry authentication..."
                             sh """
-                                docker push ${IMAGE_NAME}:${BUILD_TAG} || echo "Push failed - check Docker Hub login"
+                                docker push ${IMAGE_NAME}:${BUILD_TAG} ||bok  echo "Push failed - check Docker Hub login"
                                 docker push ${IMAGE_NAME}:jenkins-latest || echo "Push failed - check Docker Hub login"
                             """
                             echo "Image push attempted (check Docker Hub for results)"
@@ -701,14 +723,14 @@ EOF
             script {
                 dir("${APP_DIR}") {
                     sh """
-                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
-                        docker compose -p php-mysql-app-staging down -v || true
-                        docker-compose -p php-mysql-app-staging down -v || true
-                        docker compose -p php-mysql-app-production down -v || true
-                        docker-compose -p php-mysql-app-production down -v || true
+                        docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || true
+                        docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || true
+                        docker compose -p php-mysql-app-staging down -v 2>/dev/null || true
+                        docker-compose -p php-mysql-app-staging down -v 2>/dev/null || true
+                        docker compose -p php-mysql-app-production down -v 2>/dev/null || true
+                        docker-compose -p php-mysql-app-production down -v 2>/dev/null || true
                         docker system prune -f --filter "until=24h" || true
-                        rm -f .env.test .env.staging .env.production test_config.env || true
+                        rm -f .env.test .env.staging .env.production test_config.env 2>/dev/null || true
                         
                         # Additional cleanup for stray containers
                         docker ps -a | grep -E 'mysql-db|php-apache|adminer' | awk '{print \$1}' | xargs -r docker rm -f || true
@@ -798,7 +820,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             # Ensure write permissions for .env.${environment}
             touch .env.${environment} && chmod 644 .env.${environment} || { echo "Error: Cannot create or set permissions for .env.${environment}"; exit 1; }
             
-            cp .env .env.${environment}
+            cp .env .env.${environment} || { echo "Error: Cannot copy .env to .env.${environment}"; exit 1; }
             
             # Set environment-specific credentials
             if [ "${environment}" = "production" ]; then
@@ -842,7 +864,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         """
         
         sh """
-            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} down -v || true
+            COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} down -v 2>/dev/null || true
         """
         
         sh """
@@ -882,4 +904,3 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         throw e
     }
 }
-
