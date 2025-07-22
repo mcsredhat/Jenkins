@@ -66,7 +66,7 @@ pipeline {
                             # Create necessary directories as specified in .env
                             mkdir -p php-apache/src mysql/config mysql/init
                             mkdir -p php-apache/apache-config php-apache/php-config
-                            mkdir -p ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs 
+                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs
                             mkdir -p mysql_data1
                             
                             # Create Dockerfiles if they don't exist
@@ -130,9 +130,9 @@ EOF
 <?php
 \$host = getenv('MYSQL_HOST') ?: 'mysql-db';
 \$port = getenv('MYSQL_PORT') ?: '3306';
-\$dbname = getenv('MYSQL_DATABASE') ?: 'mydb_development';
-\$username = getenv('MYSQL_USER') ?: 'sqluser_development';
-\$password = getenv('MYSQL_PASSWORD') ?: 'MyAppUserPass456';
+\$dbname = getenv('MYSQL_DATABASE') ?: 'test_db';
+\$username = getenv('MYSQL_USER') ?: 'test_user';
+\$password = getenv('MYSQL_PASSWORD') ?: 'test_password';
 
 try {
     \$pdo = new PDO("mysql:host=\$host;port=\$port;dbname=\$dbname", \$username, \$password);
@@ -143,7 +143,7 @@ try {
     echo "<p>Host: \$host:\$port</p>";
     echo "<p>Database: \$dbname</p>";
     echo "<p>User: \$username</p>";
-    echo "<p>Environment: " . (getenv('PHP_ENV') ?: 'development') . "</p>";
+    echo "<p>Environment: " . (getenv('PHP_ENV') ?: 'test') . "</p>";
     echo "<p>Timestamp: " . date('Y-m-d H:i:s') . "</p>";
     
 } catch(PDOException \$e) {
@@ -164,10 +164,10 @@ EOF
                             if [ ! -f ./mysql/init/01-init.sql ]; then
                                 cat > ./mysql/init/01-init.sql << 'EOF'
 -- Create application database if not exists
-CREATE DATABASE IF NOT EXISTS mydb_development;
+CREATE DATABASE IF NOT EXISTS test_db;
 
 -- Create test table
-USE mydb_development;
+USE test_db;
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -183,7 +183,7 @@ EOF
                             fi
                             
                             # Try to set permissions with fallback
-                            chmod 755 ./volumes ./volumes/php_data ./volumes/php_logs ./volumes/mysql_data ./volumes/mysql_logs 2>/dev/null || echo "Warning: Could not set permissions"
+                            chmod 755 ./volumes ./volumes/test ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs 2>/dev/null || echo "Warning: Could not set permissions"
                             chmod 755 mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not set directory permissions"
                             
                             # Use current user for permissions if sudo fails
@@ -296,36 +296,124 @@ EOF
                         try {
                             // Create test environment file
                             sh """
-                                # Create .env-test from .env with test-specific ports
+                                # Create .env-test from .env with test-specific settings
                                 cp .env .env-test
                                 
-                                # Update ports for testing to avoid conflicts
-                                sed -i 's/PHP_EXTERNAL_PORT=8088/PHP_EXTERNAL_PORT=8091/' .env-test
-                                sed -i 's/MYSQL_EXTERNAL_PORT=3306/MYSQL_EXTERNAL_PORT=3308/' .env-test
-                                sed -i 's/ADMINER_EXTERNAL_PORT=8082/ADMINER_EXTERNAL_PORT=8084/' .env-test
+                                # Update ports and settings for testing to avoid conflicts
+                                sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=8091/' .env-test
+                                sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=3308/' .env-test
+                                sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=8084/' .env-test
+                                sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=test_db/' .env-test
+                                sed -i 's/MYSQL_USER=.*/MYSQL_USER=test_user/' .env-test
+                                sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=test_password/' .env-test
+                                sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=test_rootpass/' .env-test
+                                sed -i 's/PHP_ENV=.*/PHP_ENV=test/' .env-test
+                                sed -i 's/MYSQL_APP_ENV=.*/MYSQL_APP_ENV=test/' .env-test
+                                sed -i 's/APP_DESCRIPTION=.*/APP_DESCRIPTION="PHP-Apache2 application with MySQL database"/' .env-test
+                                sed -i 's/COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME}/' .env-test
+                                sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache-test/' .env-test
+                                sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db-test/' .env-test
+                                sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer-test/' .env-test
+                                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/test\/php_data/' .env-test
+                                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/test\/php_logs/' .env-test
+                                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/test\/mysql_data/' .env-test
+                                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/test\/mysql_logs/' .env-test
+                                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\/24/' .env-test
                                 
-                                # Update project name for test
-                                sed -i 's/COMPOSE_PROJECT_NAME=php-mysql-app/COMPOSE_PROJECT_NAME=${TEST_COMPOSE_PROJECT_NAME}/' .env-test
-                                
+                                # Debug: Show contents of .env-test
                                 echo "Test environment file created:"
-                                grep -E "(PHP_EXTERNAL_PORT|MYSQL_EXTERNAL_PORT|ADMINER_EXTERNAL_PORT|COMPOSE_PROJECT_NAME)" .env-test
+                                cat .env-test
+                                
+                                # Validate critical variables
+                                grep -q "MYSQL_ROOT_PASSWORD=test_rootpass" .env-test || { echo "Error: MYSQL_ROOT_PASSWORD not set correctly in .env-test"; exit 1; }
+                                grep -q "MYSQL_DATABASE=test_db" .env-test || { echo "Error: MYSQL_DATABASE not set correctly in .env-test"; exit 1; }
+                                grep -q "MYSQL_USER=test_user" .env-test || { echo "Error: MYSQL_USER not set correctly in .env-test"; exit 1; }
+                                grep -q "MYSQL_PASSWORD=test_password" .env-test || { echo "Error: MYSQL_PASSWORD not set correctly in .env-test"; exit 1; }
+                                grep -q "MYSQL_CONTAINER_NAME=mysql-db-test" .env-test || { echo "Error: MYSQL_CONTAINER_NAME not set correctly in .env-test"; exit 1; }
                             """
                             
                             // Extract test configuration
-                            def testConfig = [:]
                             sh """
-                                . ./.env-test
-                                echo "TEST_PHP_PORT=\$PHP_EXTERNAL_PORT" > test_config.env
-                                echo "TEST_MYSQL_PORT=\$MYSQL_EXTERNAL_PORT" >> test_config.env
-                                echo "TEST_ADMINER_PORT=\$ADMINER_EXTERNAL_PORT" >> test_config.env
-                                echo "TEST_DB_ROOT_PASSWORD=\$MYSQL_ROOT_PASSWORD" >> test_config.env
-                                echo "TEST_DB_NAME=\$MYSQL_DATABASE" >> test_config.env
-                                echo "TEST_DB_USER=\$MYSQL_USER" >> test_config.env
-                                echo "TEST_DB_PASSWORD=\$MYSQL_PASSWORD" >> test_config.env
-                                echo "TEST_PROJECT_NAME=\$COMPOSE_PROJECT_NAME" >> test_config.env
+                                # Parse test_config.env manually
+                                echo "Creating test_config.env..."
+                                > test_config.env
+                                echo "TEST_PHP_PORT=\$(grep '^PHP_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_MYSQL_PORT=\$(grep '^MYSQL_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_ADMINER_PORT=\$(grep '^ADMINER_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_DB_ROOT_PASSWORD=\$(grep '^MYSQL_ROOT_PASSWORD=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_DB_NAME=\$(grep '^MYSQL_DATABASE=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_DB_USER=\$(grep '^MYSQL_USER=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_DB_PASSWORD=\$(grep '^MYSQL_PASSWORD=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_PROJECT_NAME=\$(grep '^COMPOSE_PROJECT_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_PHP_CONTAINER=\$(grep '^PHP_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_MYSQL_CONTAINER=\$(grep '^MYSQL_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_ADMINER_CONTAINER=\$(grep '^ADMINER_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                
+                                # Debug: Show contents of test_config.env
+                                echo "Contents of test_config.env:"
+                                cat test_config.env
+                                
+                                # Validate critical variables
+                                grep -q "TEST_DB_ROOT_PASSWORD=test_rootpass" test_config.env || { echo "Error: TEST_DB_ROOT_PASSWORD not set correctly in test_config.env"; exit 1; }
+                                grep -q "TEST_DB_NAME=test_db" test_config.env || { echo "Error: TEST_DB_NAME not set correctly in test_config.env"; exit 1; }
+                                grep -q "TEST_DB_USER=test_user" test_config.env || { echo "Error: TEST_DB_USER not set correctly in test_config.env"; exit 1; }
+                                grep -q "TEST_DB_PASSWORD=test_password" test_config.env || { echo "Error: TEST_DB_PASSWORD not set correctly in test_config.env"; exit 1; }
+                                grep -q "TEST_MYSQL_CONTAINER=mysql-db-test" test_config.env || { echo "Error: TEST_MYSQL_CONTAINER not set correctly in test_config.env"; exit 1; }
+                                
+                                # Source the test_config.env to set environment variables
+                                . ./test_config.env
+                                
+                                # Verify extracted variables
+                                echo "Extracted TEST_PHP_PORT: \$TEST_PHP_PORT"
+                                echo "Extracted TEST_MYSQL_PORT: \$TEST_MYSQL_PORT"
+                                echo "Extracted TEST_ADMINER_PORT: \$TEST_ADMINER_PORT"
+                                echo "Extracted TEST_DB_ROOT_PASSWORD: \$TEST_DB_ROOT_PASSWORD"
+                                echo "Extracted TEST_DB_NAME: \$TEST_DB_NAME"
+                                echo "Extracted TEST_DB_USER: \$TEST_DB_USER"
+                                echo "Extracted TEST_DB_PASSWORD: \$TEST_DB_PASSWORD"
+                                echo "Extracted TEST_PROJECT_NAME: \$TEST_PROJECT_NAME"
+                                echo "Extracted TEST_PHP_CONTAINER: \$TEST_PHP_CONTAINER"
+                                echo "Extracted TEST_MYSQL_CONTAINER: \$TEST_MYSQL_CONTAINER"
+                                echo "Extracted TEST_ADMINER_CONTAINER: \$TEST_ADMINER_CONTAINER"
                             """
                             
-                            def configProps = readProperties file: "${APP_DIR}/test_config.env"
+                            // Store extracted variables in Groovy for use in pipeline
+                            def testConfig = [:]
+                            testConfig['TEST_PHP_PORT'] = sh(script: "grep '^TEST_PHP_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_MYSQL_PORT'] = sh(script: "grep '^TEST_MYSQL_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_ADMINER_PORT'] = sh(script: "grep '^TEST_ADMINER_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_DB_ROOT_PASSWORD'] = sh(script: "grep '^TEST_DB_ROOT_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_DB_NAME'] = sh(script: "grep '^TEST_DB_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_DB_USER'] = sh(script: "grep '^TEST_DB_USER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_DB_PASSWORD'] = sh(script: "grep '^TEST_DB_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_PROJECT_NAME'] = sh(script: "grep '^TEST_PROJECT_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_PHP_CONTAINER'] = sh(script: "grep '^TEST_PHP_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_MYSQL_CONTAINER'] = sh(script: "grep '^TEST_MYSQL_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            testConfig['TEST_ADMINER_CONTAINER'] = sh(script: "grep '^TEST_ADMINER_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
+                            
+                            // Debug: Verify extracted variables in Groovy
+                            echo "Groovy extracted TEST_PHP_PORT: ${testConfig.TEST_PHP_PORT}"
+                            echo "Groovy extracted TEST_MYSQL_PORT: ${testConfig.TEST_MYSQL_PORT}"
+                            echo "Groovy extracted TEST_ADMINER_PORT: ${testConfig.TEST_ADMINER_PORT}"
+                            echo "Groovy extracted TEST_DB_ROOT_PASSWORD: ${testConfig.TEST_DB_ROOT_PASSWORD}"
+                            echo "Groovy extracted TEST_DB_NAME: ${testConfig.TEST_DB_NAME}"
+                            echo "Groovy extracted TEST_DB_USER: ${testConfig.TEST_DB_USER}"
+                            echo "Groovy extracted TEST_DB_PASSWORD: ${testConfig.TEST_DB_PASSWORD}"
+                            echo "Groovy extracted TEST_PROJECT_NAME: ${testConfig.TEST_PROJECT_NAME}"
+                            echo "Groovy extracted TEST_PHP_CONTAINER: ${testConfig.TEST_PHP_CONTAINER}"
+                            echo "Groovy extracted TEST_MYSQL_CONTAINER: ${testConfig.TEST_MYSQL_CONTAINER}"
+                            echo "Groovy extracted TEST_ADMINER_CONTAINER: ${testConfig.TEST_ADMINER_CONTAINER}"
+                            
+                            // Validate critical variables
+                            if (!testConfig.TEST_DB_ROOT_PASSWORD) {
+                                error "TEST_DB_ROOT_PASSWORD is empty or null"
+                            }
+                            if (testConfig.TEST_DB_ROOT_PASSWORD == 'null') {
+                                error "TEST_DB_ROOT_PASSWORD is explicitly set to 'null'"
+                            }
+                            if (!testConfig.TEST_MYSQL_CONTAINER || testConfig.TEST_MYSQL_CONTAINER != 'mysql-db-test') {
+                                error "TEST_MYSQL_CONTAINER is not set to 'mysql-db-test' (value: ${testConfig.TEST_MYSQL_CONTAINER})"
+                            }
                             
                             sh """
                                 echo "Starting test services with .env-test configuration..."
@@ -333,13 +421,20 @@ EOF
                             """
                             
                             echo "Waiting for test services to start..."
-                            sleep 30
+                            sleep 60
+                            
+                            // Debug: Check container status before tests
+                            sh """
+                                echo "=== Test Container Status ==="
+                                ${composeCmd} --env-file .env-test ps
+                                docker ps -a | grep ${TEST_COMPOSE_PROJECT_NAME} || echo "No containers found for ${TEST_COMPOSE_PROJECT_NAME}"
+                            """
                             
                             // Wait for MySQL to be ready
                             retry(20) {
                                 sleep(10)
                                 sh """
-                                    ${composeCmd} --env-file .env-test exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=${configProps.TEST_DB_ROOT_PASSWORD} --connect-timeout=10
+                                    ${composeCmd} --env-file .env-test exec -T ${testConfig.TEST_MYSQL_CONTAINER} mysqladmin ping -h mysql-db -u root --password="${testConfig.TEST_DB_ROOT_PASSWORD}" --connect-timeout=10
                                 """
                             }
                             
@@ -348,36 +443,36 @@ EOF
                             // Database tests
                             sh """
                                 echo "Testing database connectivity and operations..."
-                                ${composeCmd} --env-file .env-test exec -T mysql-db mysql -uroot -p${configProps.TEST_DB_ROOT_PASSWORD} -h mysql-db -e "SHOW DATABASES;"
+                                ${composeCmd} --env-file .env-test exec -T ${testConfig.TEST_MYSQL_CONTAINER} mysql -uroot -p"${testConfig.TEST_DB_ROOT_PASSWORD}" -h mysql-db -e "SHOW DATABASES;"
                                 
-                                echo "Testing database '${configProps.TEST_DB_NAME}' exists..."
-                                ${composeCmd} --env-file .env-test exec -T mysql-db mysql -uroot -p${configProps.TEST_DB_ROOT_PASSWORD} -h mysql-db -e "USE ${configProps.TEST_DB_NAME}; SELECT 'Database connection successful' as status;"
+                                echo "Testing database '${testConfig.TEST_DB_NAME}' exists..."
+                                ${composeCmd} --env-file .env-test exec -T ${testConfig.TEST_MYSQL_CONTAINER} mysql -uroot -p"${testConfig.TEST_DB_ROOT_PASSWORD}" -h mysql-db -e "USE ${testConfig.TEST_DB_NAME}; SELECT 'Database connection successful' as status;"
                                 
                                 echo "Testing regular user access..."
-                                ${composeCmd} --env-file .env-test exec -T mysql-db mysql -u${configProps.TEST_DB_USER} -p${configProps.TEST_DB_PASSWORD} -h mysql-db -e "USE ${configProps.TEST_DB_NAME}; SELECT COUNT(*) as user_count FROM users;"
+                                ${composeCmd} --env-file .env-test exec -T ${testConfig.TEST_MYSQL_CONTAINER} mysql -u${testConfig.TEST_DB_USER} -p"${testConfig.TEST_DB_PASSWORD}" -h mysql-db -e "USE ${testConfig.TEST_DB_NAME}; SELECT COUNT(*) as user_count FROM users;"
                             """
                             
                             // Application tests
                             sh """
-                                echo "Testing PHP application on port ${configProps.TEST_PHP_PORT}..."
+                                echo "Testing PHP application on port ${testConfig.TEST_PHP_PORT}..."
                                 sleep 10
-                                curl -f --connect-timeout 15 --max-time 45 http://localhost:${configProps.TEST_PHP_PORT}/ || { 
-                                    echo "PHP application test failed on port ${configProps.TEST_PHP_PORT} - checking container status"; 
+                                curl -f --connect-timeout 15 --max-time 45 http://localhost:${testConfig.TEST_PHP_PORT}/ || { 
+                                    echo "PHP application test failed on port ${testConfig.TEST_PHP_PORT} - checking container status"; 
                                     ${composeCmd} --env-file .env-test ps; 
-                                    ${composeCmd} --env-file .env-test logs php-apache; 
+                                    ${composeCmd} --env-file .env-test logs ${testConfig.TEST_PHP_CONTAINER}; 
                                     exit 1; 
                                 }
                                 
-                                echo "Testing Adminer interface on port ${configProps.TEST_ADMINER_PORT}..."
-                                curl -f --connect-timeout 15 --max-time 45 http://localhost:${configProps.TEST_ADMINER_PORT}/ || { 
-                                    echo "Adminer interface test failed on port ${configProps.TEST_ADMINER_PORT} - checking container status"; 
+                                echo "Testing Adminer interface on port ${testConfig.TEST_ADMINER_PORT}..."
+                                curl -f --connect-timeout 15 --max-time 45 http://localhost:${testConfig.TEST_ADMINER_PORT}/ || { 
+                                    echo "Adminer interface test failed on port ${testConfig.TEST_ADMINER_PORT} - checking container status"; 
                                     ${composeCmd} --env-file .env-test ps; 
-                                    ${composeCmd} --env-file .env-test logs adminer; 
+                                    ${composeCmd} --env-file .env-test logs ${testConfig.TEST_ADMINER_CONTAINER}; 
                                     exit 1; 
                                 }
                                 
                                 echo "Testing health check endpoint..."
-                                curl -f --connect-timeout 15 --max-time 30 "http://localhost:${configProps.TEST_PHP_PORT}/health.php" || { 
+                                curl -f --connect-timeout 15 --max-time 30 "http://localhost:${testConfig.TEST_PHP_PORT}/health.php" || { 
                                     echo "Health check endpoint test failed"; 
                                     exit 1;
                                 }
@@ -385,11 +480,14 @@ EOF
                             
                             echo "All tests passed successfully!"
                             echo "Test Environment Summary:"
-                            echo "- PHP Application: http://localhost:${configProps.TEST_PHP_PORT}"
-                            echo "- Adminer: http://localhost:${configProps.TEST_ADMINER_PORT}"
-                            echo "- MySQL Connection: mysql -h127.0.0.1 -P${configProps.TEST_MYSQL_PORT} -uroot -p${configProps.TEST_DB_ROOT_PASSWORD}"
-                            echo "- Test Database: ${configProps.TEST_DB_NAME}"
-                            echo "- Project Name: ${configProps.TEST_PROJECT_NAME}"
+                            echo "- PHP Application: http://localhost:${testConfig.TEST_PHP_PORT}"
+                            echo "- Adminer: http://localhost:${testConfig.TEST_ADMINER_PORT}"
+                            echo "- MySQL Connection: mysql -h127.0.0.1 -P${testConfig.TEST_MYSQL_PORT} -uroot -p${testConfig.TEST_DB_ROOT_PASSWORD}"
+                            echo "- Test Database: ${testConfig.TEST_DB_NAME}"
+                            echo "- Project Name: ${testConfig.TEST_PROJECT_NAME}"
+                            echo "- PHP Container: ${testConfig.TEST_PHP_CONTAINER}"
+                            echo "- MySQL Container: ${testConfig.TEST_MYSQL_CONTAINER}"
+                            echo "- Adminer Container: ${testConfig.TEST_ADMINER_CONTAINER}"
                             
                         } catch (Exception e) {
                             echo "Test failed: ${e.getMessage()}"
@@ -398,22 +496,24 @@ EOF
                                 echo "Current directory: \$(pwd)"
                                 echo "Environment files:"
                                 ls -la .env* || echo 'No environment files found'
+                                cat .env-test 2>/dev/null || echo "Could not read .env-test"
+                                cat test_config.env 2>/dev/null || echo "Could not read test_config.env"
                                 
                                 echo "=== Container Status ==="
                                 ${composeCmd} --env-file .env-test ps || echo 'Could not retrieve container status'
                                 
                                 echo "=== MySQL Logs ==="
-                                ${composeCmd} --env-file .env-test logs mysql-db | tail -50 || echo 'Could not retrieve MySQL logs'
+                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_MYSQL_CONTAINER} | tail -50 || echo 'Could not retrieve MySQL logs'
                                 
                                 echo "=== PHP App Logs ==="
-                                ${composeCmd} --env-file .env-test logs php-apache | tail -50 || echo 'Could not retrieve PHP logs'
+                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_PHP_CONTAINER} | tail -50 || echo 'Could not retrieve PHP logs'
                                 
                                 echo "=== Adminer Logs ==="
-                                ${composeCmd} --env-file .env-test logs adminer | tail -50 || echo 'Could not retrieve Adminer logs'
+                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_ADMINER_CONTAINER} | tail -50 || echo 'Could not retrieve Adminer logs'
                                 
                                 echo "=== Network Information ==="
                                 docker network ls
-                                docker ps -a | grep test || echo "No test containers found"
+                                docker ps -a | grep ${TEST_COMPOSE_PROJECT_NAME} || echo "No test containers found"
                                 
                                 echo "=== Port Status ==="
                                 netstat -tlnp | grep -E ":(8091|3308|8084)" || echo "No test ports found in use"
@@ -423,11 +523,14 @@ EOF
                             sh """
                                 echo "Cleaning up test environment..."
                                 ${composeCmd} --env-file .env-test down -v --remove-orphans || true
+                                docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                                docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                                 rm -f test_config.env .env-test || true
                                 
-                                # Clean up any dangling containers
+                                # Clean up any dangling containers and volumes
                                 docker container prune -f || true
                                 docker volume prune -f --filter "label=com.docker.compose.project=${TEST_COMPOSE_PROJECT_NAME}" || true
+                                docker volume prune -f --filter "label=com.docker.compose.project=php-mysql-app" || true
                             """
                         }
                     }
@@ -588,8 +691,15 @@ EOF
                     sh """
                         docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
                         docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v || true
+                        docker compose -p php-mysql-app-staging down -v || true
+                        docker-compose -p php-mysql-app-staging down -v || true
+                        docker compose -p php-mysql-app-production down -v || true
+                        docker-compose -p php-mysql-app-production down -v || true
                         docker system prune -f --filter "until=24h" || true
                         rm -f .env.test .env.staging .env.production test_config.env || true
+                        
+                        # Additional cleanup for stray containers
+                        docker ps -a | grep -E 'mysql-db|php-apache|adminer' | awk '{print \$1}' | xargs -r docker rm -f || true
                     """
                 }
             }
@@ -675,17 +785,45 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         sh """
             cp .env .env.${environment}
             
-            sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass_${environment}/' .env.${environment}
-            sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=mydb_${environment}/' .env.${environment}
-            sed -i 's/MYSQL_USER=.*/MYSQL_USER=sqluser_${environment}/' .env.${environment}
-            sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=MyAppUserPass456_${environment}/' .env.${environment}
+            # Set environment-specific credentials
+            if [ "${environment}" = "production" ]; then
+                sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=rootpass123!@#/' .env.${environment}
+                sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=myappdb/' .env.${environment}
+                sed -i 's/MYSQL_USER=.*/MYSQL_USER=appuser/' .env.${environment}
+                sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=MyAppUserPass456!@#/' .env.${environment}
+                sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache/' .env.${environment}
+                sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db/' .env.${environment}
+                sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer/' .env.${environment}
+                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/php_data/' .env.${environment}
+                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/php_logs/' .env.${environment}
+                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/mysql_data/' .env.${environment}
+                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/mysql_logs/' .env.${environment}
+                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.18.19.0\/24/' .env.${environment}
+            else
+                sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=test_rootpass/' .env.${environment}
+                sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=test_db/' .env.${environment}
+                sed -i 's/MYSQL_USER=.*/MYSQL_USER=test_user/' .env.${environment}
+                sed -i 's/MYSQL_PASSWORD=.*/MYSQL_PASSWORD=test_password/' .env.${environment}
+                sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache-test/' .env.${environment}
+                sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db-test/' .env.${environment}
+                sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer-test/' .env.${environment}
+                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/test\/php_data/' .env.${environment}
+                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/test\/php_logs/' .env.${environment}
+                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/test\/mysql_data/' .env.${environment}
+                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/test\/mysql_logs/' .env.${environment}
+                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\/24/' .env.${environment}
+            fi
+            
             sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
             sed -i 's/MYSQL_EXTERNAL_PORT=.*/MYSQL_EXTERNAL_PORT=${mysqlPort}/' .env.${environment}
             sed -i 's/ADMINER_EXTERNAL_PORT=.*/ADMINER_EXTERNAL_PORT=${adminerPort}/' .env.${environment}
             sed -i 's/PHP_ENV=.*/PHP_ENV=${environment}/' .env.${environment}
             sed -i 's/MYSQL_APP_ENV=.*/MYSQL_APP_ENV=${environment}/' .env.${environment}
+            sed -i 's/APP_DESCRIPTION=.*/APP_DESCRIPTION="PHP-Apache2 application with MySQL database"/' .env.${environment}
+            sed -i 's/COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=php-mysql-app-${environment}/' .env.${environment}
             
-            echo "Environment-specific .env file created for ${environment}"
+            echo "Environment-specific .env file created for ${environment}:"
+            cat .env.${environment}
         """
         
         sh """
@@ -703,7 +841,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         retry(15) {
             sleep(10)
             sh """
-                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db mysqladmin ping -h mysql-db -u root --password=rootpass_${environment} --connect-timeout=5 || exit 1
+                COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} exec -T mysql-db${environment == 'production' ? '' : '-test'} mysqladmin ping -h mysql-db -u root --password="${environment == 'production' ? 'rootpass123!@#' : 'test_rootpass'}" --connect-timeout=5 || exit 1
                 curl -f http://localhost:${phpPort}/ || exit 1
                 curl -f http://localhost:${adminerPort}/ || exit 1
                 echo "=== Service Status ==="
@@ -714,7 +852,7 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         echo "Successfully deployed to ${environment}"
         echo "PHP Application: http://localhost:${phpPort}"
         echo "Adminer: http://localhost:${adminerPort}"
-        echo "MySQL Connection: mysql -h127.0.0.1 -P${mysqlPort} -uroot -prootpass_${environment}"
+        echo "MySQL Connection: mysql -h127.0.0.1 -P${mysqlPort} -uroot -p${environment == 'production' ? 'rootpass123!@#' : 'test_rootpass'}"
         
     } catch (Exception e) {
         echo "Deployment to ${environment} failed: ${e.getMessage()}"
@@ -723,6 +861,8 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} logs || echo "No logs available"
             echo "=== Service Status ==="
             COMPOSE_PROJECT_NAME=${projectName} ${composeCmd} --env-file .env.${environment} ps
+            echo "=== Environment File ==="
+            cat .env.${environment} 2>/dev/null || echo "Could not read .env.${environment}"
         """
         throw e
     }
