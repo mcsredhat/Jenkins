@@ -314,11 +314,11 @@ EOF
                                 sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache-test/' .env-test
                                 sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db-test/' .env-test
                                 sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer-test/' .env-test
-                                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/test\/php_data/' .env-test
-                                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/test\/php_logs/' .env-test
-                                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/test\/mysql_data/' .env-test
-                                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/test\/mysql_logs/' .env-test
-                                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\/24/' .env-test
+                                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=.\\/volumes\\/test\\/php_data/' .env-test
+                                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=.\\/volumes\\/test\\/php_logs/' .env-test
+                                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=.\\/volumes\\/test\\/mysql_data/' .env-test
+                                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=.\\/volumes\\/test\\/mysql_logs/' .env-test
+                                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\\/24/' .env-test
                                 
                                 # Debug: Show contents of .env-test
                                 echo "Test environment file created:"
@@ -794,11 +794,11 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
                 sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache/' .env.${environment}
                 sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db/' .env.${environment}
                 sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer/' .env.${environment}
-                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/php_data/' .env.${environment}
-                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/php_logs/' .env.${environment}
-                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/mysql_data/' .env.${environment}
-                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/mysql_logs/' .env.${environment}
-                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.18.19.0\/24/' .env.${environment}
+                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=.\\/volumes\\/php_data/' .env.${environment}
+                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=.\\/volumes\\/php_logs/' .env.${environment}
+                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=.\\/volumes\\/mysql_data/' .env.${environment}
+                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=.\\/volumes\\/mysql_logs/' .env.${environment}
+                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.18.19.0\\/24/' .env.${environment}
             else
                 sed -i 's/MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=test_rootpass/' .env.${environment}
                 sed -i 's/MYSQL_DATABASE=.*/MYSQL_DATABASE=test_db/' .env.${environment}
@@ -807,11 +807,11 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
                 sed -i 's/PHP_CONTAINER_NAME=.*/PHP_CONTAINER_NAME=php-apache-test/' .env.${environment}
                 sed -i 's/MYSQL_CONTAINER_NAME=.*/MYSQL_CONTAINER_NAME=mysql-db-test/' .env.${environment}
                 sed -i 's/ADMINER_CONTAINER_NAME=.*/ADMINER_CONTAINER_NAME=adminer-test/' .env.${environment}
-                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=\.\/volumes\/test\/php_data/' .env.${environment}
-                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=\.\/volumes\/test\/php_logs/' .env.${environment}
-                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=\.\/volumes\/test\/mysql_data/' .env.${environment}
-                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=\.\/volumes\/test\/mysql_logs/' .env.${environment}
-                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\/24/' .env.${environment}
+                sed -i 's/PHP_DATA_PATH=.*/PHP_DATA_PATH=.\\/volumes\\/test\\/php_data/' .env.${environment}
+                sed -i 's/PHP_LOGS_PATH=.*/PHP_LOGS_PATH=.\\/volumes\\/test\\/php_logs/' .env.${environment}
+                sed -i 's/MYSQL_DATA_PATH=.*/MYSQL_DATA_PATH=.\\/volumes\\/test\\/mysql_data/' .env.${environment}
+                sed -i 's/MYSQL_LOGS_PATH=.*/MYSQL_LOGS_PATH=.\\/volumes\\/test\\/mysql_logs/' .env.${environment}
+                sed -i 's/NETWORK_SUBNET=.*/NETWORK_SUBNET=172.19.20.0\\/24/' .env.${environment}
             fi
             
             sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=${phpPort}/' .env.${environment}
