@@ -132,7 +132,7 @@ EOF
 \$port = getenv('MYSQL_PORT') ?: '3306';
 \$dbname = getenv('MYSQL_DATABASE') ?: 'mydb_development';
 \$username = getenv('MYSQL_USER') ?: 'sqluser_development';
-\$password = getenv('MYSQL_PASSWORD') ?: 'MyAppUserPass456!@#';
+\$password = getenv('MYSQL_PASSWORD') ?: 'MyAppUserPass456';
 
 try {
     \$pdo = new PDO("mysql:host=\$host;port=\$port;dbname=\$dbname", \$username, \$password);
