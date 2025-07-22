@@ -10,7 +10,7 @@ pipeline {
         CONTAINER_NAME = "php-mysql-project"
         TEST_CONTAINER_NAME = "php-mysql-test-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        APP_DIR = "PHP-DB"
+        APP_DIR = "PHP_DB"
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
