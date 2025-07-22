@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -10,7 +11,7 @@ pipeline {
         CONTAINER_NAME = "php-mysql-project"
         TEST_CONTAINER_NAME = "php-mysql-test-${env.BUILD_NUMBER}"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        APP_DIR = "PHP_DB"
+        APP_DIR = "php_mysql_app"
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
@@ -129,8 +130,8 @@ EOF
 <?php
 \$host = getenv('MYSQL_HOST') ?: 'mysql-db';
 \$port = getenv('MYSQL_PORT') ?: '3306';
-\$dbname = getenv('MYSQL_DATABASE') ?: 'myappdb';
-\$username = getenv('MYSQL_USER') ?: 'appuser';
+\$dbname = getenv('MYSQL_DATABASE') ?: 'mydb_development';
+\$username = getenv('MYSQL_USER') ?: 'sqluser_development';
 \$password = getenv('MYSQL_PASSWORD') ?: 'MyAppUserPass456!@#';
 
 try {
@@ -163,10 +164,10 @@ EOF
                             if [ ! -f ./mysql/init/01-init.sql ]; then
                                 cat > ./mysql/init/01-init.sql << 'EOF'
 -- Create application database if not exists
-CREATE DATABASE IF NOT EXISTS myappdb;
+CREATE DATABASE IF NOT EXISTS mydb_development;
 
 -- Create test table
-USE myappdb;
+USE mydb_development;
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -391,7 +392,7 @@ EOF
                             echo "- Project Name: ${configProps.TEST_PROJECT_NAME}"
                             
                         } catch (Exception e) {
-                            echo "Test failed{keyword: failed: ${e.getMessage()}"
+                            echo "Test failed: ${e.getMessage()}"
                             sh """
                                 echo "=== Test Environment Debug Information ==="
                                 echo "Current directory: \$(pwd)"
@@ -517,9 +518,7 @@ EOF
                                     image.push("staging")
                                     image.push("develop-latest")
                                 }
-                                echo "Image
-
- pushed successfully with credentials"
+                                echo "Image pushed successfully with credentials"
                             }
                         } catch (Exception credError) {
                             echo "Docker Hub credentials not found, attempting push without registry authentication..."
