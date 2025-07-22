@@ -10,7 +10,7 @@ ARG PHP_DIR_PATH=/var/www/html/
 ARG PHP_APP_PORT=8088
 ARG PHP_MOUNT1=/php/data
 ARG PHP_MOUNT2=/php/logs
-ARG PHP_SHELL=/bin/bash 
+ARG PHP_SHELL=/bin/bash
 ARG PHP_HOSTNAME=php-apache-host
 ARG PHP_ENV=production
 ARG PHP_HEALTH_URL="http://localhost:8088"
@@ -59,21 +59,20 @@ WORKDIR ${DIR_PATH}
 # Update packages, install dependencies, create directories and user
 RUN apt-get update && \
     apt-get install -y curl vim default-mysql-client && \
-    docker-php-ext-install pdo_mysql mysqli && \
-    mkdir -p ${VAR_RUN} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH} ${VAR_LOGS} && \
+    docker-php-ext-install pdo_mysql && \
+    mkdir -p ${VAR_RUN} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH} ${VAR_LOGS}  && \
     touch ${VAR_LOGS}/php_errors.log && \
     groupadd -g ${GROUP_ID} ${GROUP_NAME} && \
     useradd -u ${USER_ID} -M -g ${GROUP_NAME} -s ${SHELL_PATH} ${USER_NAME} && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Enable required Apache modules (fixed SSL typo)
-RUN a2enmod rewrite headers expires deflate ssl
-
 # Copy configuration files
 COPY ${CP_APACHE_CFG}/ports.conf /etc/apache2/ports.conf
 COPY ${CP_APACHE_CFG}/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY ${CP_PHP_CFG}/php.ini /usr/local/etc/php/php.ini
+# COPY volumes/php_data ${DIR_PATH}/volumes/php_data
+# COPY volumes/php_logs ${DIR_PATH}/volumes/php_logs
 
 # Copy application source files
 COPY ${CP_SRC}/index.php ${DIR_PATH}/
@@ -84,9 +83,10 @@ RUN chown -R ${USER_NAME}:${GROUP_NAME} ${DIR_PATH} ${MOUNT1_PATH} ${MOUNT2_PATH
     chmod 755 ${MOUNT1_PATH} ${MOUNT2_PATH} && \
     chmod 644 /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && \
     chmod 644 /usr/local/etc/php/php.ini && \
-    chown -R www-data:www-data ${VAR_LOGS} && \
-    chown -R www-data:www-data /var/www/html && \
-    chmod -R 755 /var/www/html
+    chown -R www-data:www-data ${VAR_LOGS}
+
+# Enable Apache modules
+RUN a2enmod rewrite headers expires deflate
 
 # Enable the default site
 RUN a2ensite 000-default
