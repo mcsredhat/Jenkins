@@ -1,4 +1,4 @@
-
+```groovy
 pipeline {
     agent any
 
@@ -63,11 +63,20 @@ pipeline {
                 script {
                     dir("${APP_DIR}") {
                         sh """
+                            # Ensure Jenkins user has permissions
+                            whoami
+                            sudo chown -R \$(whoami):\$(whoami) . || echo "Warning: Could not change ownership of ${APP_DIR}"
+                            sudo chmod -R u+w . || echo "Warning: Could not set write permissions for ${APP_DIR}"
+                            
                             # Create necessary directories as specified in .env
-                            mkdir -p php-apache/src mysql/config mysql/init || true 
-                            mkdir -p php-apache/apache-config php-apache/php-config || true
-                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs || true
-                            mkdir -p mysql_data1 || true
+                            mkdir -p php-apache/src mysql/config mysql/init
+                            mkdir -p php-apache/apache-config php-apache/php-config
+                            mkdir -p ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs
+                            mkdir -p mysql_data1
+                            
+                            # Set permissions with fallback
+                            chmod -R 755 ./volumes ./volumes/test ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not set permissions"
+                            chown -R \$(whoami):\$(whoami) ./volumes mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not change ownership"
                             
                             # Create Dockerfiles if they don't exist
                             if [ ! -f ./php-apache/Dockerfile ]; then
@@ -182,13 +191,6 @@ INSERT IGNORE INTO users (username, email) VALUES
 EOF
                             fi
                             
-                            # Try to set permissions with fallback
-                            chmod 755 ./volumes ./volumes/test ./volumes/test/php_data ./volumes/test/php_logs ./volumes/test/mysql_data ./volumes/test/mysql_logs 2>/dev/null || echo "Warning: Could not set permissions"
-                            chmod 755 mysql_data1 ./mysql/init 2>/dev/null || echo "Warning: Could not set directory permissions"
-                            
-                            # Use current user for permissions if sudo fails
-                            chown -R \$(whoami):\$(whoami) ./volumes 2>/dev/null || echo "Warning: Could not change ownership"
-                            
                             # Stop any existing containers
                             docker compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No compose services to stop"
                             docker compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || docker-compose -p ${TEST_COMPOSE_PROJECT_NAME} down -v 2>/dev/null || echo "No test compose services to stop"
@@ -293,11 +295,17 @@ EOF
                             returnStdout: true
                         ).trim()
                         
+                        // Initialize testConfig
+                        def testConfig = [:]
+                        
                         try {
                             // Create test environment file
                             sh """
+                                # Ensure write permissions for .env-test
+                                touch .env-test && chmod 644 .env-test || { echo "Error: Cannot create or set permissions for .env-test"; exit 1; }
+                                
                                 # Create .env-test from .env with test-specific settings
-                                cp .env .env-test
+                                cp .env .env-test || { echo "Error: Cannot copy .env to .env-test"; exit 1; }
                                 
                                 # Update ports and settings for testing to avoid conflicts
                                 sed -i 's/PHP_EXTERNAL_PORT=.*/PHP_EXTERNAL_PORT=8091/' .env-test
@@ -334,20 +342,23 @@ EOF
                             
                             // Extract test configuration
                             sh """
-                                # Parse test_config.env manually
+                                # Ensure write permissions for test_config.env
+                                touch test_config.env && chmod 644 test_config.env || { echo "Error: Cannot create or set permissions for test_config.env"; exit 1; }
+                                
+                                # Parse test_config.env
                                 echo "Creating test_config.env..."
                                 > test_config.env
-                                echo "TEST_PHP_PORT=\$(grep '^PHP_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_MYSQL_PORT=\$(grep '^MYSQL_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_ADMINER_PORT=\$(grep '^ADMINER_EXTERNAL_PORT=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_DB_ROOT_PASSWORD=\$(grep '^MYSQL_ROOT_PASSWORD=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_DB_NAME=\$(grep '^MYSQL_DATABASE=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_DB_USER=\$(grep '^MYSQL_USER=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_DB_PASSWORD=\$(grep '^MYSQL_PASSWORD=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_PROJECT_NAME=\$(grep '^COMPOSE_PROJECT_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_PHP_CONTAINER=\$(grep '^PHP_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_MYSQL_CONTAINER=\$(grep '^MYSQL_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
-                                echo "TEST_ADMINER_CONTAINER=\$(grep '^ADMINER_CONTAINER_NAME=' .env-test | cut -d '=' -f2-)" >> test_config.env
+                                echo "TEST_PHP_PORT=\$(grep '^PHP_EXTERNAL_PORT=' .env-test | cut -d '=' -f2- || echo '8091')" >> test_config.env
+                                echo "TEST_MYSQL_PORT=\$(grep '^MYSQL_EXTERNAL_PORT=' .env-test | cut -d '=' -f2- || echo '3308')" >> test_config.env
+                                echo "TEST_ADMINER_PORT=\$(grep '^ADMINER_EXTERNAL_PORT=' .env-test | cut -d '=' -f2- || echo '8084')" >> test_config.env
+                                echo "TEST_DB_ROOT_PASSWORD=\$(grep '^MYSQL_ROOT_PASSWORD=' .env-test | cut -d '=' -f2- || echo 'test_rootpass')" >> test_config.env
+                                echo "TEST_DB_NAME=\$(grep '^MYSQL_DATABASE=' .env-test | cut -d '=' -f2- || echo 'test_db')" >> test_config.env
+                                echo "TEST_DB_USER=\$(grep '^MYSQL_USER=' .env-test | cut -d '=' -f2- || echo 'test_user')" >> test_config.env
+                                echo "TEST_DB_PASSWORD=\$(grep '^MYSQL_PASSWORD=' .env-test | cut -d '=' -f2- || echo 'test_password')" >> test_config.env
+                                echo "TEST_PROJECT_NAME=\$(grep '^COMPOSE_PROJECT_NAME=' .env-test | cut -d '=' -f2- || echo '${TEST_COMPOSE_PROJECT_NAME}')" >> test_config.env
+                                echo "TEST_PHP_CONTAINER=\$(grep '^PHP_CONTAINER_NAME=' .env-test | cut -d '=' -f2- || echo 'php-apache-test')" >> test_config.env
+                                echo "TEST_MYSQL_CONTAINER=\$(grep '^MYSQL_CONTAINER_NAME=' .env-test | cut -d '=' -f2- || echo 'mysql-db-test')" >> test_config.env
+                                echo "TEST_ADMINER_CONTAINER=\$(grep '^ADMINER_CONTAINER_NAME=' .env-test | cut -d '=' -f2- || echo 'adminer-test')" >> test_config.env
                                 
                                 # Debug: Show contents of test_config.env
                                 echo "Contents of test_config.env:"
@@ -377,39 +388,40 @@ EOF
                                 echo "Extracted TEST_ADMINER_CONTAINER: \$TEST_ADMINER_CONTAINER"
                             """
                             
-                            // Store extracted variables in Groovy for use in pipeline
-                            def testConfig = [:]
-                            testConfig['TEST_PHP_PORT'] = sh(script: "grep '^TEST_PHP_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_MYSQL_PORT'] = sh(script: "grep '^TEST_MYSQL_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_ADMINER_PORT'] = sh(script: "grep '^TEST_ADMINER_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_DB_ROOT_PASSWORD'] = sh(script: "grep '^TEST_DB_ROOT_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_DB_NAME'] = sh(script: "grep '^TEST_DB_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_DB_USER'] = sh(script: "grep '^TEST_DB_USER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_DB_PASSWORD'] = sh(script: "grep '^TEST_DB_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_PROJECT_NAME'] = sh(script: "grep '^TEST_PROJECT_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_PHP_CONTAINER'] = sh(script: "grep '^TEST_PHP_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_MYSQL_CONTAINER'] = sh(script: "grep '^TEST_MYSQL_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            testConfig['TEST_ADMINER_CONTAINER'] = sh(script: "grep '^TEST_ADMINER_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2-", returnStdout: true).trim()
-                            
-                            // Debug: Verify extracted variables in Groovy
-                            echo "Groovy extracted TEST_PHP_PORT: ${testConfig.TEST_PHP_PORT}"
-                            echo "Groovy extracted TEST_MYSQL_PORT: ${testConfig.TEST_MYSQL_PORT}"
-                            echo "Groovy extracted TEST_ADMINER_PORT: ${testConfig.TEST_ADMINER_PORT}"
-                            echo "Groovy extracted TEST_DB_ROOT_PASSWORD: ${testConfig.TEST_DB_ROOT_PASSWORD}"
-                            echo "Groovy extracted TEST_DB_NAME: ${testConfig.TEST_DB_NAME}"
-                            echo "Groovy extracted TEST_DB_USER: ${testConfig.TEST_DB_USER}"
-                            echo "Groovy extracted TEST_DB_PASSWORD: ${testConfig.TEST_DB_PASSWORD}"
-                            echo "Groovy extracted TEST_PROJECT_NAME: ${testConfig.TEST_PROJECT_NAME}"
-                            echo "Groovy extracted TEST_PHP_CONTAINER: ${testConfig.TEST_PHP_CONTAINER}"
-                            echo "Groovy extracted TEST_MYSQL_CONTAINER: ${testConfig.TEST_MYSQL_CONTAINER}"
-                            echo "Groovy extracted TEST_ADMINER_CONTAINER: ${testConfig.TEST_ADMINER_CONTAINER}"
+                            // Populate testConfig map
+                            try {
+                                testConfig['TEST_PHP_PORT'] = sh(script: "grep '^TEST_PHP_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo '8091'", returnStdout: true).trim()
+                                testConfig['TEST_MYSQL_PORT'] = sh(script: "grep '^TEST_MYSQL_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo '3308'", returnStdout: true).trim()
+                                testConfig['TEST_ADMINER_PORT'] = sh(script: "grep '^TEST_ADMINER_PORT=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo '8084'", returnStdout: true).trim()
+                                testConfig['TEST_DB_ROOT_PASSWORD'] = sh(script: "grep '^TEST_DB_ROOT_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'test_rootpass'", returnStdout: true).trim()
+                                testConfig['TEST_DB_NAME'] = sh(script: "grep '^TEST_DB_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'test_db'", returnStdout: true).trim()
+                                testConfig['TEST_DB_USER'] = sh(script: "grep '^TEST_DB_USER=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'test_user'", returnStdout: true).trim()
+                                testConfig['TEST_DB_PASSWORD'] = sh(script: "grep '^TEST_DB_PASSWORD=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'test_password'", returnStdout: true).trim()
+                                testConfig['TEST_PROJECT_NAME'] = sh(script: "grep '^TEST_PROJECT_NAME=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo '${TEST_COMPOSE_PROJECT_NAME}'", returnStdout: true).trim()
+                                testConfig['TEST_PHP_CONTAINER'] = sh(script: "grep '^TEST_PHP_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'php-apache-test'", returnStdout: true).trim()
+                                testConfig['TEST_MYSQL_CONTAINER'] = sh(script: "grep '^TEST_MYSQL_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'mysql-db-test'", returnStdout: true).trim()
+                                testConfig['TEST_ADMINER_CONTAINER'] = sh(script: "grep '^TEST_ADMINER_CONTAINER=' ${APP_DIR}/test_config.env | cut -d '=' -f2- || echo 'adminer-test'", returnStdout: true).trim()
+                                
+                                // Debug: Verify extracted variables in Groovy
+                                echo "Groovy extracted TEST_PHP_PORT: ${testConfig.TEST_PHP_PORT}"
+                                echo "Groovy extracted TEST_MYSQL_PORT: ${testConfig.TEST_MYSQL_PORT}"
+                                echo "Groovy extracted TEST_ADMINER_PORT: ${testConfig.TEST_ADMINER_PORT}"
+                                echo "Groovy extracted TEST_DB_ROOT_PASSWORD: ${testConfig.TEST_DB_ROOT_PASSWORD}"
+                                echo "Groovy extracted TEST_DB_NAME: ${testConfig.TEST_DB_NAME}"
+                                echo "Groovy extracted TEST_DB_USER: ${testConfig.TEST_DB_USER}"
+                                echo "Groovy extracted TEST_DB_PASSWORD: ${testConfig.TEST_DB_PASSWORD}"
+                                echo "Groovy extracted TEST_PROJECT_NAME: ${testConfig.TEST_PROJECT_NAME}"
+                                echo "Groovy extracted TEST_PHP_CONTAINER: ${testConfig.TEST_PHP_CONTAINER}"
+                                echo "Groovy extracted TEST_MYSQL_CONTAINER: ${testConfig.TEST_MYSQL_CONTAINER}"
+                                echo "Groovy extracted TEST_ADMINER_CONTAINER: ${testConfig.TEST_ADMINER_CONTAINER}"
+                            } catch (Exception e) {
+                                echo "Failed to populate testConfig: ${e.getMessage()}"
+                                error "Cannot proceed without valid testConfig"
+                            }
                             
                             // Validate critical variables
-                            if (!testConfig.TEST_DB_ROOT_PASSWORD) {
-                                error "TEST_DB_ROOT_PASSWORD is empty or null"
-                            }
-                            if (testConfig.TEST_DB_ROOT_PASSWORD == 'null') {
-                                error "TEST_DB_ROOT_PASSWORD is explicitly set to 'null'"
+                            if (!testConfig.TEST_DB_ROOT_PASSWORD || testConfig.TEST_DB_ROOT_PASSWORD == 'null') {
+                                error "TEST_DB_ROOT_PASSWORD is empty or null (value: ${testConfig.TEST_DB_ROOT_PASSWORD})"
                             }
                             if (!testConfig.TEST_MYSQL_CONTAINER || testConfig.TEST_MYSQL_CONTAINER != 'mysql-db-test') {
                                 error "TEST_MYSQL_CONTAINER is not set to 'mysql-db-test' (value: ${testConfig.TEST_MYSQL_CONTAINER})"
@@ -495,7 +507,7 @@ EOF
                                 echo "=== Test Environment Debug Information ==="
                                 echo "Current directory: \$(pwd)"
                                 echo "Environment files:"
-                                ls -la .env* || echo 'No environment files found'
+                                ls -la .env* test_config.env 2>/dev/null || echo 'No environment files found'
                                 cat .env-test 2>/dev/null || echo "Could not read .env-test"
                                 cat test_config.env 2>/dev/null || echo "Could not read test_config.env"
                                 
@@ -503,13 +515,13 @@ EOF
                                 ${composeCmd} --env-file .env-test ps || echo 'Could not retrieve container status'
                                 
                                 echo "=== MySQL Logs ==="
-                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_MYSQL_CONTAINER} | tail -50 || echo 'Could not retrieve MySQL logs'
+                                ${composeCmd} --env-file .env-test logs mysql-db-test | tail -50 || echo 'Could not retrieve MySQL logs'
                                 
                                 echo "=== PHP App Logs ==="
-                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_PHP_CONTAINER} | tail -50 || echo 'Could not retrieve PHP logs'
+                                ${composeCmd} --env-file .env-test logs php-apache-test | tail -50 || echo 'Could not retrieve PHP logs'
                                 
                                 echo "=== Adminer Logs ==="
-                                ${composeCmd} --env-file .env-test logs ${testConfig.TEST_ADMINER_CONTAINER} | tail -50 || echo 'Could not retrieve Adminer logs'
+                                ${composeCmd} --env-file .env-test logs adminer-test | tail -50 || echo 'Could not retrieve Adminer logs'
                                 
                                 echo "=== Network Information ==="
                                 docker network ls
@@ -783,6 +795,9 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         echo "PHP Port: ${phpPort}, MySQL Port: ${mysqlPort}, Adminer Port: ${adminerPort}"
         
         sh """
+            # Ensure write permissions for .env.${environment}
+            touch .env.${environment} && chmod 644 .env.${environment} || { echo "Error: Cannot create or set permissions for .env.${environment}"; exit 1; }
+            
             cp .env .env.${environment}
             
             # Set environment-specific credentials
@@ -867,3 +882,4 @@ def deployToEnvironment(environment, phpPort, mysqlPort, adminerPort) {
         throw e
     }
 }
+```
