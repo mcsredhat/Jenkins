@@ -72,7 +72,7 @@ COPY package-lock.json* ./
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
 
 # ---------- Switch to Build User ----------
-USER ${USER_NAME}
+#USER ${USER_NAME}
 
 # ---------- Configure npm settings ----------
 RUN npm config set fund false && npm config set audit-level moderate
