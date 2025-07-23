@@ -103,7 +103,7 @@ pipeline {
                         echo """
                         ✅ React application built successfully!
                         Build Duration: ${buildDuration} seconds
-                        Image: ${IMAGE_NAME}:${BUILD_TAG}
+                        Image:"${IMAGE_NAME}:${BUILD_TAG}"
                         Image Size: $(docker images ${IMAGE_NAME}:${BUILD_TAG} --format "{{.Size}}")
                         """
                         
