@@ -207,12 +207,13 @@ RUN addgroup -g 101 -S nginx || true && \
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY vue-entrypoint-nonroot.sh /usr/local/bin/vue-entrypoint-nonroot.sh
+RUN chmod +x /usr/local/bin/vue-entrypoint-nonroot.sh
 
 # ---------- Set proper ownership for nginx directories ----------  
 RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx && \
     chown -R nginx:nginx /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
     chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html 
-    chmod +x /usr/local/bin/vue-entrypoint-nonroot.sh
+    
 
 # ---------- Create health check endpoint ----------
 RUN echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1></body></html>' > /usr/share/nginx/html/health.html && \
