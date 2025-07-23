@@ -23,7 +23,7 @@ NODE_ENV=${NODE_ENV:-"production"}
 DATA_DIR=${DATA_DIR:-"/var/lib/vueapp"}
 LOGS_DIR=${LOGS_DIR:-"/var/log/vueapp"}
 CONFIG_DIR=${CONFIG_DIR:-"/etc/vueapp"}
-APP_PORT=${APP_PORT:-"80"}
+APP_PORT=${APP_PORT:-"8088"}
 USER_NAME=${USER_NAME:-"nginx"}
 
 # Pre-flight checks
