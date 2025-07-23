@@ -1,4 +1,4 @@
-```dockerfile
+
 # =============================================================================
 # REACT 4-STAGE MULTI-STAGE DOCKERFILE TEMPL
 # =============================================================================
@@ -221,4 +221,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # ---------- Use Entrypoint Script ----------
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-```
+
