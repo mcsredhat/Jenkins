@@ -1,0 +1,81 @@
+project portoflio/
+├── src/
+│   ├── app/
+│   │   ├── components/
+│   │   │   ├── header/
+│   │   │   ├── about/
+│   │   │   ├── projects/
+│   │   │   ├── skills/
+│   │   │   └── contact/
+│   │   └── assets/
+│   │       ├── images/
+│   │       ├── icons/
+│   │       └── resume/
+├── package.json
+├── angular.json
+└── tsconfig.json
+├── package-lock.json
+├── tsconfig.json
+├── tsconfig.jap
+├── tsconfig.spec
+├── nginx.config
+
+# 1. Verify versions — Node.js, npm, and Angular CLI must be compatible
+node --version            # e.g., v20.x
+npm --version             # e.g., v11.x
+ng version                # Angular CLI and package details
+
+# 2. Clean old dependencies and cache
+rm -rf node_modules package-lock.json  # Remove old modules and lockfile
+npm cache clean --force                # Clear npm cache
+sudo rm -rf dist 
+sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+sudo dnf install -y https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm
+sudo dnf install -y chromium 
+sudo find / -name chromium 2>/dev/null
+sudo dnf install flatpak
+sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+sudo flatpak install flathub org.chromium.Chromium
+export CHROME_BIN=/usr/bin/chromium
+# 3. Install dependencies fresh
+npm install                            # Install modules from package.json
+node --version            # e.g., v20.x
+npm --version             # e.g., v11.x
+ng version 
+npm audit fix --force
+npm run lint
+npm run build  
+npm test              # Angular CLI and package details
+npm audit fix --force                  # Force fixes (be cautious)                          
+# 4. Build Angular project (production)
+ng test      # Optional: run unit tests
+ng build --configuration production    # Generates /dist/portfolio-project/
+ng lint      # Check for linting/style issues
+ng build     # Make sure the app builds
+ng test      # Optional: run unit tests
+
+
+# ✅ Ensure /dist/portfolio-project/ is created successfully before building the Docker image
+
+# 1. Build the Docker image from the project root (where Dockerfile is located)
+docker build -t angular-portfolio .
+
+# 2. Run the container (port 8080 on host → port 80 in container)
+docker run -d --name angular.app -p 8080:80 angular-portfolio
+
+# ✅ Optional variations for debugging or overriding entrypoints:
+docker run -it --name angular.app -p 8080:80 angular-portfolio /bin/sh           # Debug in shell
+docker run -d --name angular.app -p 8080:80 angular-portfolio nginx -g "daemon off;"  # Manually start nginx
+
+# 3. Test if the container is running and responsive
+docker ps                       # See container status
+docker logs angular.app         # Check logs for errors or confirmation
+curl http://localhost:8080      # Verify app is served
+curl http://localhost:8080/health  # Optional: custom health check route
+
+# 4. If needed, stop and remove container
+docker stop angular.app
+docker rm angular.app
+
+# 5. Rerun container after changes
+docker run -d --name angular.app -p 8080:80 angular-portfolio

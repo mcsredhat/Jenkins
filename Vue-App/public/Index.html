@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A production-ready Vue.js application with Docker support" />
+  <meta name="keywords" content="vue, vite, docker, nginx, production" />
+  <meta name="author" content="Your Name" />
+  
+  <!-- Open Graph Meta Tags -->
+  <meta property="og:title" content="Vue.js Docker App" />
+  <meta property="og:description" content="A production-ready Vue.js application with Docker support" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://yourapp.com" />
+  <meta property="og:image" content="/og-image.png" />
+  
+  <!-- Twitter Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Vue.js Docker App" />
+  <meta name="twitter:description" content="A production-ready Vue.js application with Docker support" />
+  <meta name="twitter:image" content="/twitter-image.png" />
+  
+  <!-- Security Headers -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+  <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+  
+  <!-- Theme -->
+  <meta name="theme-color" content="#41b883" />
+  <meta name="msapplication-TileColor" content="#41b883" />
+  <meta name="color-scheme" content="light dark" />
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  
+  <!-- Preconnect to external domains -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  
+  <!-- DNS Prefetch -->
+  <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+  <link rel="dns-prefetch" href="//fonts.gstatic.com" />
+  
+  <!-- Preload critical resources -->
+  <link rel="preload" href="/src/main.js" as="script" crossorigin />
+  <link rel="preload" href="/src/style.css" as="style" />
+  
+  <title>Vue.js Docker App</title>
+  
+  <!-- Critical CSS (inline small amount for faster rendering) -->
+  <style>
+    /* Critical CSS for loading state */
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #41b883 0%, #35495e 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .loading-subtext {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    
+    /* Hide loading when app is ready */
+    .app-loaded #loading {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Loading Vue.js App...</div>
+    <div class="loading-subtext">Please wait while we prepare your application</div>
+  </div>
+  
+  <!-- App Container -->
+  <div id="app"></div>
+  
+  <!-- Fallback for users with JavaScript disabled -->
+  <noscript>
+    <div style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 2rem;
+      box-sizing: border-box;
+    ">
+      <h1 style="color: #e74c3c; margin-bottom: 1rem;">JavaScript Required</h1>
+      <p style="color: #666; font-size: 1.1rem; margin-bottom: 1rem;">
+        This application requires JavaScript to run properly.
+      </p>
+      <p style="color: #666; font-size: 1rem;">
+        Please enable JavaScript in your browser and refresh the page.
+      </p>
+    </div>
+  </noscript>
+  
+  <!-- Main Application Script -->
+  <script type="module" src="/src/main.js"></script>
+  
+  <!-- Remove loading screen when app is loaded -->
+  <script>
+    // Hide loading screen when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        document.body.classList.add('app-loaded');
+      }, 100);
+    });
+    
+    // Error handling for module loading
+    window.addEventListener('error', function(e) {
+      console.error('Application loading error:', e);
+      const loading = document.getElementById('loading');
+      if (loading) {
+        loading.innerHTML = `
+          <div style="text-align: center; color: white;">
+            <h2>⚠️ Loading Error</h2>
+            <p>Failed to load the application. Please refresh the page.</p>
+            <button onclick="window.location.reload()" style="
+              background: white;
+              color: #41b883;
+              border: none;
+              padding: 0.8rem 1.5rem;
+              border-radius: 4px;
+              font-size: 1rem;
+              cursor: pointer;
+              margin-top: 1rem;
+            ">
+              Refresh Page
+            </button>
+          </div>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+## 📁 Project Structure Setup
+
+First, ensure your project has the following structure:
+
+```
+your-vue-project/
+├── Dockerfile
+├── nginx.conf
+├── vue-entrypoint-nonroot.sh
+├── package.json
+├── package-lock.json (or yarn.lock/pnpm-lock.yaml)
+├── .dockerignore 
+├── src/
+│   ├── main.js (or main.ts)
+│   ├── App.vue
+│   └── components/
+     └── FeatureCard.vue
+    └── utils/
+     └── index.js
+├── public/
+│   ├── index.html
+    ├── vite.
+    ├── vue.
+│   └── favicon.ico
+├── vite.config.js (or vue.config.js)
+└── dist/ (created during build)
+```
+
+
+
+# Docker Vue.js Application Deployment Guide
+
+## Phase 1: Initial Build and Deployment
+
+### Step 1: Build the Production Image
+
+# Build the multi-stage Docker image targeting the production stage
+docker build --target production -t vuetapp:prod .
+
+```
+**Purpose**: Creates an optimized production build of your Vue.js application using multi-stage Docker build.
+
+### Step 2: Run the Container
+
+# Deploy the container with custom entrypoint script
+docker run -d --name vue-app-pro -p 8080:80 --entrypoint /usr/local/bin/vue-entrypoint-nonroot.sh vueapp:prod
+```
+**Purpose**: Starts the container in detached mode, maps port 8080 to internal port 80, and uses a custom non-root entrypoint script.
+
+### Step 3: Verify Container Status
+
+# Check if the container is running successfully
+docker ps -a | grep vue-app-pro
+```
+**Purpose**: Confirms the container status and helps identify any startup issues.
+
+### Step 4: Check Application Logs
+
+# View container logs for debugging (Note: Fixed syntax)
+docker logs vue-app-pro
+```
+**Purpose**: Reviews startup logs and error messages to troubleshoot deployment issues.
+
+### Step 5: Test Application Access
+
+# Test if the application is responding (Note: Fixed URL syntax)
+curl http://localhost:8080
+```
+**Purpose**: Verifies that the Vue.js application is accessible and responding to requests.
+
+---
+
+## Phase 2: Troubleshooting and Debugging
+
+### When Container Fails to Start Properly
+
+#### Step 1: Verify Container Status
+
+# Check detailed container status
+docker ps -a | grep vue-app-pro
+```
+**Purpose**: Determine if the container exited immediately or is running but not responding.
+
+#### Step 2: Inspect Entrypoint Script
+
+# Verify the entrypoint script exists and has correct permissions
+docker exec vue-app-pro ls -la /usr/local/bin/vue-entrypoint-nonroot.sh
+```
+**Purpose**: Ensures the custom entrypoint script is present and executable.
+
+---
+
+## Phase 3: Advanced Troubleshooting (When Entrypoint Issues Occur)
+
+### Step 1: Clean Slate Approach
+
+# Stop and remove the problematic container
+docker stop vue-app-pro
+docker rm vue-app-pro
+```
+**Purpose**: Removes the failed container to start fresh with debugging approach.
+
+### Step 2: Start Container with Temporary Entrypoint
+
+# Start container with tail command to keep it running for debugging
+docker run -d --name vue-app-pro --entrypoint tail vueapp:prod -f /dev/null
+```
+**Purpose**: Keeps container alive without executing the problematic entrypoint script, allowing for debugging.
+
+### Step 3: Fix Entrypoint Script Issues
+
+# Copy corrected entrypoint script into the running container
+docker cp vue-entrypoint-fixed.sh vue-app-pro:/usr/local/bin/vue-entrypoint-nonroot.sh
+```
+**Purpose**: Replaces the problematic entrypoint script with a corrected version (likely fixing line ending issues).
+
+### Step 4: Verify and Test Script
+
+# Confirm the file exists and test execution
+docker exec vue-app-pro ls -la /usr/local/bin/vue-entrypoint-nonroot.sh
+docker exec vue-app-pro /usr/local/bin/vue-entrypoint-nonroot.sh
+```
+**Purpose**: Validates that the corrected script is properly installed and executable.
+
+### Step 5: Create Fixed Image
+
+# Commit the container with fixes to a new image
+docker commit vue-app-pro vueapp:prod-fixed
+```
+**Purpose**: Saves the container state with fixes as a new Docker image for future use.
+
+---
+
+## Phase 4: Final Deployment with Fixed Image
+
+### Step 1: Deploy with Fixed Image
+
+# Stop and remove the debugging container
+docker stop vue-app-pro
+docker rm vue-app-pro
+
+# Run the container with the fixed image and proper entrypoint
+docker run -d --name vue-app-pro -p 8080:80 --entrypoint /usr/local/bin/vue-entrypoint-nonroot.sh vueapp:prod-fixed
+```
+**Purpose**: Deploys the application using the corrected image with working entrypoint script.
+
+### Step 2: Comprehensive Verification
+
+# Check container status
+docker ps
+
+# Review startup logs
+docker logs vue-app-pro
+
+# Verify running processes
+docker exec vue-app-pro ps aux
+
+# Test application connectivity
+curl http://localhost:8080
+```
+**Purpose**: Comprehensive health check to ensure the application is running correctly.
+
+### Step 3: Update Original Image (Optional)
+
+# Tag the fixed image as the main production image
+docker tag vueapp:prod-fixed vueapp:prod
+```
+**Purpose**: Makes the fixed version the default production image for future deployments.
+
+---
+
+## Common Issues and Solutions
+
+**Issue**: Container exits immediately
+- **Solution**: Check logs with `docker logs vue-app-pro` and verify entrypoint script permissions
+
+**Issue**: Entrypoint script has wrong line endings (Windows CRLF vs Unix LF)
+- **Solution**: Use the troubleshooting phase to copy a corrected script with proper Unix line endings
+
+**Issue**: Port not accessible
+- **Solution**: Verify port mapping (-p 8080:80) and check if the application is binding to the correct internal port
+
+**Issue**: Permission denied on entrypoint script
+- **Solution**: Ensure the script has execute permissions (`chmod +x`) in the Docker image
