@@ -1,0 +1,30 @@
+
+# Install Node.js 20.x from NodeSource
+curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+sudo dnf install nodejs
+
+# Verify versions
+node --version
+npm --version
+# Clear old dependencies
+rm -rf node_modules package-lock.json
+
+# Reinstall with compatible versions
+npm install
+
+# Try building
+npm run build
+
+#Check what the vulnerabilities are
+npm audit
+
+# Try to fix them automatically
+npm audit fix
+
+# If some require manual fixes
+npm audit fix --force
+docker build --target production -t reactapp:prod .
+docker run -p 3000:80 --name react-project --entrypoint="" reactapp:prod nginx -g "daemon off;" -c /etc/nginx/nginx.conf
+
+curl http://localhost:3000
+or open browser http://ip-address:3000
