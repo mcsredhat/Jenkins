@@ -205,26 +205,14 @@ RUN addgroup -g 101 -S nginx || true && \
 
 # ---------- Copy Build Artifacts from Build Stage ----------
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# ---------- Create default nginx configuration ----------
-RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
-    echo '    listen 8088;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    server_name localhost;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location / {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location /health {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        return 200 "Vue App OK\n";' >> /etc/nginx/conf.d/default.conf && \
-    echo '        add_header Content-Type text/plain;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '}' >> /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY vue-entrypoint-nonroot.sh /usr/local/bin/vue-entrypoint-nonroot.sh
 
 # ---------- Set proper ownership for nginx directories ----------  
 RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx && \
     chown -R nginx:nginx /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
     chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html 
+    chmod +x /usr/local/bin/vue-entrypoint-nonroot.sh
 
 # ---------- Create health check endpoint ----------
 RUN echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1></body></html>' > /usr/share/nginx/html/health.html && \
@@ -249,6 +237,7 @@ STOPSIGNAL SIGTERM
 # ---------- Health Check ----------
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT}${HEALTH_CHECK_PATH} || exit 1
+ENTRYPOINT ["/usr/local/bin/vue-entrypoint-nonroot.sh"]
 
 # ---------- Start nginx ----------
 CMD ["nginx", "-g", "daemon off;"]
