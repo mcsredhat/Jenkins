@@ -22,7 +22,7 @@ pipeline {
         NODE_ENV = 'production'
         CI = 'true'
         APP_DIR = 'react'
-        DOCKER_BUILDKIT = '0' // Disable Buildx
+        
     }
 
     stages {
