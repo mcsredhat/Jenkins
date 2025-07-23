@@ -66,8 +66,7 @@ FROM base AS dependencies
 # ---------- Copy Dependency Files First (for better caching) ----------
 COPY package.json ./
 COPY package-lock.json* ./
-COPY yarn.lock* ./
-COPY pnpm-lock.yaml* ./
+
 
 # ---------- Set Ownership of Dependency Files ----------
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
