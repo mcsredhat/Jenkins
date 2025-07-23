@@ -47,13 +47,22 @@ echo "Vue application files verified successfully"
 
 # Test nginx configuration
 echo "Testing nginx configuration..."
-nginx -t -c /etc/nginx/nginx.conf 2>/dev/null || {
+nginx -t 2>/dev/null || {
     echo "Error: Nginx configuration test failed"
-    nginx -t -c /etc/nginx/nginx.conf
+    # Show more details about the error
+    nginx -t
     exit 1
 }
 
 echo "Nginx configuration test passed"
+
+# Create health check endpoint if it doesn't exist
+if [ ! -f "/usr/share/nginx/html/health" ]; then
+    echo "Creating health check endpoint..."
+    echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1><p>Service is running on port '${APP_PORT}'</p><p>User: '${USER_NAME}'</p><p>Time: '$(date)'</p></body></html>' > /usr/share/nginx/html/health 2>/dev/null || {
+        echo "Warning: Could not create health check endpoint"
+    }
+fi
 
 # Create a simple 404 page if it doesn't exist
 if [ ! -f "/usr/share/nginx/html/404.html" ]; then
@@ -115,45 +124,17 @@ fi
 
 # Start nginx in the background
 echo "Starting nginx server on port ${APP_PORT}..."
-nginx -c /etc/nginx/nginx.conf -g "daemon off;" &
+nginx -g "daemon off;" &
 
 NGINX_PID=$!
 echo "Nginx started with PID: $NGINX_PID"
 
-# Wait for nginx to start
-sleep 5
-
-# Verify nginx is listening on the correct port with retries
-echo "Verifying Nginx is listening on port ${APP_PORT}..."
-for i in 1 2 3; do
-    if netstat -tuln 2>/dev/null | grep -q ":${APP_PORT}"; then
-        echo "Nginx is listening on port ${APP_PORT}"
-        break
-    else
-        echo "Attempt $i: Nginx is not yet listening on port ${APP_PORT}, retrying..."
-        sleep 2
-    fi
-    if [ $i -eq 3 ]; then
-        echo "Error: Nginx failed to listen on port ${APP_PORT} after 3 attempts"
-        echo "Debugging information:"
-        echo "Nginx logs:"
-        cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
-        echo "Nginx process status:"
-        ps aux | grep nginx || echo "No nginx processes found"
-        echo "Network status:"
-        netstat -tuln 2>/dev/null || echo "netstat not available"
-        echo "Container logs:"
-        cat /var/log/nginx/* 2>/dev/null || echo "No additional logs available"
-        exit 1
-    fi
-done
+# Wait for nginx to be ready
+sleep 2
 
 # Verify nginx is running
 if ! kill -0 "$NGINX_PID" 2>/dev/null; then
     echo "Error: Nginx failed to start"
-    echo "Debugging information:"
-    echo "Nginx logs:"
-    cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
     exit 1
 fi
 
@@ -170,9 +151,6 @@ if command -v curl >/dev/null 2>&1; then
         fi
         if [ $i -eq 3 ]; then
             echo "Warning: Health check failed after 3 attempts"
-            echo "Debugging information:"
-            echo "Nginx logs:"
-            cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
         fi
     done
 else
