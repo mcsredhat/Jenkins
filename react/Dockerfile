@@ -93,11 +93,11 @@ COPY --chown=${USER_NAME}:${GROUP_NAME} public/ ./public/
 COPY --chown=${USER_NAME}:${GROUP_NAME} src/ ./src/
 
 # Copy other necessary files
-COPY --chown=${USER_NAME}:${GROUP_NAME} .eslintrc.json* ./
-COPY --chown=${USER_NAME}:${GROUP_NAME} .prettierrc* ./
-COPY --chown=${USER_NAME}:${GROUP_NAME} .prettierignore* ./
-COPY --chown=${USER_NAME}:${GROUP_NAME} tsconfig.json* ./
-COPY --chown=${USER_NAME}:${GROUP_NAME} jsconfig.json* ./
+COPY --chown=${USER_NAME}:${GROUP_NAME} .eslintrc.json ./
+COPY --chown=${USER_NAME}:${GROUP_NAME} .prettierrc ./
+COPY --chown=${USER_NAME}:${GROUP_NAME} .prettierignore ./
+COPY --chown=${USER_NAME}:${GROUP_NAME} tsconfig.json ./
+COPY --chown=${USER_NAME}:${GROUP_NAME} jsconfig.json ./
 
 # ---------- Debug: List files to verify copying ----------
 RUN echo "=== Debugging: Checking copied files ===" && \
