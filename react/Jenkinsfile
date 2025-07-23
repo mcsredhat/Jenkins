@@ -2,35 +2,26 @@ pipeline {
     agent any
 
     environment {
-        // Docker Configuration
         DOCKER_REGISTRY = 'https://index.docker.io/v1/'
         DOCKER_USERNAME = 'farajassulai'
         DOCKER_REPO = 'react-app'
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
-        
-        // Container Configuration
         CONTAINER_NAME = "react-app-${env.BUILD_NUMBER}"
         TEST_CONTAINER_NAME = "test-react-${env.BUILD_NUMBER}"
         APP_PORT = "80"
         TEST_PORT = "3001"
         STAGING_PORT = "3002"
         PRODUCTION_PORT = "3003"
-        
-        // GitHub Configuration
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
-        
-        // Feature Toggles
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
         ENABLE_STAGING_DEPLOY = 'true'
         ENABLE_PRODUCTION_DEPLOY = 'true'
         EMAIL_CONFIGURED = 'false'
-        
-        // Build Configuration
         NODE_ENV = 'production'
         CI = 'true'
-        APP_DIR = 'react' // Added APP_DIR for the react directory
+        APP_DIR = 'react'
     }
 
     stages {
@@ -40,7 +31,6 @@ pipeline {
                 checkout scm
                 dir("${APP_DIR}") {
                     script {
-                        // Display build information
                         echo """
                         🚀 React Application Build Information:
                         ─────────────────────────────────────────
@@ -51,28 +41,21 @@ pipeline {
                         Repository: ${GITHUB_REPO}
                         ─────────────────────────────────────────
                         """
-                        
-                        // Verify React project structure and list directories
                         echo "🔍 Verifying React project structure..."
                         sh """
                             echo "Root directory contents (react/):"
                             ls -la
-                            
                             echo "Checking for React essentials:"
                             test -f package.json && echo "✅ package.json found" || echo "❌ package.json missing"
                             test -f Dockerfile && echo "✅ Dockerfile found" || echo "❌ Dockerfile missing"
                             test -d src && echo "✅ src directory found" || echo "❌ src directory missing"
                             test -d public && echo "✅ public directory found" || echo "❌ public directory missing"
-                            
                             echo "Package.json contents:"
                             cat package.json | head -20
-                            
                             echo "Listing src directory contents:"
                             ls -la src || echo "⚠️ src directory not found"
-                            
                             echo "Listing public directory contents:"
                             ls -la public || echo "⚠️ public directory not found"
-                            
                             echo "Listing build directory contents:"
                             ls -la build || echo "⚠️ build directory not found (may not exist yet)"
                         """
@@ -87,44 +70,22 @@ pipeline {
                 dir("${APP_DIR}") {
                     script {
                         try {
-                            // Build the complete multi-stage Docker image
                             echo "Building all stages: base -> dependencies -> build -> production"
-                            
                             def buildStartTime = System.currentTimeMillis()
-                            
-                            // Build with build args for optimization
-                            def image = docker.build(
-                                "${IMAGE_NAME}:${BUILD_TAG}", 
-                                """
-                                --build-arg APP_NAME=react-app \
-                                --build-arg APP_VERSION=${BUILD_TAG} \
-                                --build-arg BUILD_ENV=production \
-                                --build-arg NODE_ENV=production \
-                                --target production \
-                                .
-                                """
-                            )
-                            
+                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", "--build-arg APP_NAME=react-app --build-arg APP_VERSION=${BUILD_TAG} --build-arg BUILD_ENV=production --build-arg NODE_ENV=production --target production ${APP_DIR}")
                             def buildEndTime = System.currentTimeMillis()
                             def buildDuration = (buildEndTime - buildStartTime) / 1000
-                            
-                            // Tag the image
                             image.tag("latest")
                             image.tag("jenkins-build-${env.BUILD_NUMBER}")
-                            
                             echo "✅ React application built successfully!"
                             echo "Build Duration: ${buildDuration} seconds"
                             echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
-                            
-                            // Display image information
                             sh """
                                 echo "📊 Image Information:"
                                 docker images ${IMAGE_NAME}:${BUILD_TAG}
-                                
                                 echo "🔍 Image Layers:"
                                 docker history ${IMAGE_NAME}:${BUILD_TAG} --no-trunc || true
                             """
-                            
                         } catch (Exception e) {
                             echo "❌ React build failed: ${e.getMessage()}"
                             echo "🔍 Docker build context:"
@@ -142,7 +103,6 @@ pipeline {
                 dir("${APP_DIR}") {
                     script {
                         try {
-                            // Start test container
                             sh """
                                 echo "Starting React test container..."
                                 docker run -d --name ${TEST_CONTAINER_NAME} \
@@ -155,63 +115,42 @@ pipeline {
                                     --health-retries=3 \
                                     ${IMAGE_NAME}:${BUILD_TAG}
                             """
-        
                             echo "⌛ Waiting for React application to start..."
                             sleep 15
-        
-                            // Wait for container to be healthy
                             echo "🔍 Checking container health..."
                             retry(6) {
                                 sleep 10
                                 sh """
                                     echo "Checking container status..."
                                     docker ps | grep ${TEST_CONTAINER_NAME}
-                                    
                                     echo "Testing application endpoints..."
-                                    # Try health endpoint first, then root
                                     curl -f http://localhost:${TEST_PORT}/health || \
                                     curl -f -I http://localhost:${TEST_PORT}/ || \
                                     (echo "Both endpoints failed" && exit 1)
                                 """
                             }
-        
-                            // Run comprehensive tests
                             echo "🔍 Running comprehensive React application tests..."
                             sh """
                                 echo "Testing React application responses..."
-                                
-                                # Test main page
                                 response=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${TEST_PORT}/)
                                 echo "Root endpoint response: \$response"
                                 [ "\$response" = "200" ] || echo "Warning: Root endpoint returned \$response"
-                                
-                                # Test static assets
                                 curl -I http://localhost:${TEST_PORT}/static/ 2>/dev/null || echo "Static assets endpoint not available"
-                                
-                                # Check container logs for errors
                                 echo "Container logs:"
                                 docker logs ${TEST_CONTAINER_NAME} | tail -20
-                                
-                                # Verify nginx is serving React build
                                 docker exec ${TEST_CONTAINER_NAME} ls -la /usr/share/nginx/html/ || echo "Could not list nginx html directory"
                             """
-        
                             echo "✅ All React application tests passed!"
-                            
                         } catch (Exception e) {
                             echo "❌ React application tests failed: ${e.getMessage()}"
-                            
-                            // Debug information
                             sh """
                                 echo "🔍 Debugging information:"
                                 docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
                                 docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
                                 docker inspect ${TEST_CONTAINER_NAME} || echo "Could not inspect container"
                             """
-                            
                             throw e
                         } finally {
-                            // Cleanup test container
                             sh """
                                 docker stop ${TEST_CONTAINER_NAME} || true
                                 docker rm ${TEST_CONTAINER_NAME} || true
@@ -230,21 +169,16 @@ pipeline {
                 echo "🔍 Running security scan on React application image..."
                 script {
                     try {
-                        // Check if Trivy is available
                         def trivyCheck = sh(
                             script: "docker run --rm aquasec/trivy:latest --version >/dev/null 2>&1",
                             returnStatus: true
                         )
-                        
                         if (trivyCheck != 0) {
                             echo "⚠️ Trivy not available, skipping security scan"
                             currentBuild.result = 'UNSTABLE'
                             return
                         }
-                        
                         echo "📊 Scanning React application for vulnerabilities..."
-                        
-                        // Run comprehensive security scan
                         sh """
                             echo "Running Trivy security scan..."
                             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -254,8 +188,6 @@ pipeline {
                                 --ignore-unfixed \
                                 ${IMAGE_NAME}:${BUILD_TAG} || true
                         """
-                        
-                        // Check for critical vulnerabilities
                         def criticalVulns = sh(
                             script: """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -267,14 +199,12 @@ pipeline {
                             """,
                             returnStatus: true
                         )
-                        
                         if (criticalVulns == 0) {
                             echo "✅ No critical vulnerabilities found in React application"
                         } else {
                             echo "⚠️ Critical vulnerabilities detected - build marked as unstable"
                             currentBuild.result = 'UNSTABLE'
                         }
-                        
                     } catch (Exception e) {
                         echo "❌ Security scan failed: ${e.getMessage()}"
                         echo "Continuing with build..."
@@ -298,12 +228,8 @@ pipeline {
                     try {
                         docker.withRegistry("${DOCKER_REGISTRY}", 'dockerhub-credentials') {
                             def image = docker.image("${IMAGE_NAME}:${BUILD_TAG}")
-                            
-                            // Push build-specific tag
                             image.push()
                             image.push("latest")
-                            
-                            // Environment-specific tags
                             if (env.BRANCH_NAME == 'main') {
                                 image.push("production")
                                 image.push("stable")
@@ -313,11 +239,9 @@ pipeline {
                                 image.push("develop")
                                 echo "✅ Development tags pushed"
                             }
-                            
                             echo "✅ React application image pushed successfully to Docker Hub"
                             echo "🌐 View on Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}"
                         }
-                        
                     } catch (Exception e) {
                         echo "❌ Docker Hub push failed: ${e.getMessage()}"
                         echo "💡 Ensure Docker Hub credentials are configured in Jenkins"
@@ -388,18 +312,11 @@ pipeline {
             echo "🧹 Cleaning up build artifacts..."
             script {
                 sh """
-                    # Stop and remove any remaining test containers
                     docker stop ${TEST_CONTAINER_NAME} || true
                     docker rm ${TEST_CONTAINER_NAME} || true
-                    
-                    # Clean up old images (keep last 3 builds)
                     docker images ${IMAGE_NAME} --format "{{.Tag}}" | grep -E '^[0-9]+-[a-f0-9]{7}\$' | sort -V | head -n -3 | xargs -r -I {} docker rmi ${IMAGE_NAME}:{} || true
-                    
-                    # General cleanup
                     docker system prune -f --filter "until=24h" || true
                 """
-                
-                // Archive build information
                 writeFile file: 'build-info.txt', text: """
 React Application Build Information
 ===================================
@@ -425,19 +342,16 @@ Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
                             subject: "✅ React App Build Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
                                 🎉 React application build completed successfully!
-
                                 📋 Build Details:
                                 ├─ Job: ${env.JOB_NAME}
                                 ├─ Build: #${env.BUILD_NUMBER}
                                 ├─ Branch: ${env.BRANCH_NAME ?: 'main'}
                                 ├─ Commit: ${env.GIT_COMMIT?.take(7) ?: 'unknown'}
                                 └─ Image: ${IMAGE_NAME}:${BUILD_TAG}
-
                                 🔗 Links:
                                 ├─ Build URL: ${env.BUILD_URL}
                                 ├─ GitHub: ${GITHUB_REPO}
                                 └─ Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
-
                                 🚀 Deployment URLs:
                                 ├─ Staging: http://localhost:${STAGING_PORT} (if deployed)
                                 └─ Production: http://localhost:${PRODUCTION_PORT} (if deployed)
@@ -460,19 +374,16 @@ Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
                             subject: "❌ React App Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                             body: """
                                 ❌ React application build failed!
-
                                 📋 Build Details:
                                 ├─ Job: ${env.JOB_NAME}
                                 ├─ Build: #${env.BUILD_NUMBER}
                                 ├─ Branch: ${env.BRANCH_NAME ?: 'main'}
                                 └─ Commit: ${env.GIT_COMMIT?.take(7) ?: 'unknown'}
-
                                 🔍 Troubleshooting:
                                 ├─ Console Output: ${env.BUILD_URL}console
                                 ├─ Check Dockerfile syntax and build context
                                 ├─ Verify package.json and dependencies
                                 └─ Ensure React build completes successfully
-
                                 Please investigate and retry the build.
                             """,
                             recipientProviders: [developers(), requestor()]
@@ -490,21 +401,16 @@ Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${DOCKER_REPO}
     }
 }
 
-// Helper function for React application deployment
 def deployReactApp(environment, port) {
     def containerName = "react-app-${environment}"
     def deploymentStartTime = System.currentTimeMillis()
     
     try {
         echo "🚀 Deploying React application to ${environment} environment on port ${port}"
-        
-        // Stop and remove existing container
         sh """
             docker stop ${containerName} || true
             docker rm ${containerName} || true
         """
-        
-        // Deploy new container
         sh """
             docker run -d \
                 --name ${containerName} \
@@ -522,11 +428,8 @@ def deployReactApp(environment, port) {
                 --health-start-period=40s \
                 ${IMAGE_NAME}:${BUILD_TAG}
         """
-
         echo "⌛ Waiting for React application to stabilize in ${environment}..."
         sleep 20
-
-        // Verify deployment
         echo "🔍 Verifying React application deployment..."
         retry(5) {
             sh """
@@ -540,36 +443,28 @@ def deployReactApp(environment, port) {
             """
             sleep 5
         }
-
         def deploymentEndTime = System.currentTimeMillis()
         def deploymentDuration = (deploymentEndTime - deploymentStartTime) / 1000
-
         echo "✅ React application successfully deployed to ${environment}!"
         echo "Environment: ${environment}"
         echo "Port: ${port}"
         echo "Container: ${containerName}"
         echo "Duration: ${deploymentDuration} seconds"
         echo "URL: http://localhost:${port}"
-        
-        // Show deployment status
         sh """
             echo "📊 Deployment Status:"
             docker ps | grep ${containerName}
             echo "Container health:"
             docker inspect ${containerName} --format='{{.State.Health.Status}}' || echo "Health check not available"
         """
-        
     } catch (Exception e) {
         echo "❌ Deployment to ${environment} failed: ${e.getMessage()}"
-        
-        // Debug information
         sh """
             echo "🔍 Deployment debugging information:"
             docker ps -a | grep ${containerName} || echo "Container not found"
             docker logs ${containerName} || echo "No logs available"
             docker inspect ${containerName} || echo "Cannot inspect container"
         """
-        
         throw e
     }
 }
