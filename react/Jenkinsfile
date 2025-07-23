@@ -100,12 +100,9 @@ pipeline {
                         image.tag("latest")
                         image.tag("jenkins-build-${env.BUILD_NUMBER}")
                         
-                        echo """
-                        ✅ React application built successfully!
-                        Build Duration: ${buildDuration} seconds
-                        Image:"${IMAGE_NAME}:${BUILD_TAG}"
-                        Image Size: $(docker images ${IMAGE_NAME}:${BUILD_TAG} --format "{{.Size}}")
-                        """
+                        echo "✅ React application built successfully!"
+                        echo "Build Duration: ${buildDuration} seconds"
+                        echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
                         
                         // Display image information
                         sh """
@@ -532,16 +529,12 @@ def deployReactApp(environment, port) {
         def deploymentEndTime = System.currentTimeMillis()
         def deploymentDuration = (deploymentEndTime - deploymentStartTime) / 1000
 
-        echo """
-        ✅ React application successfully deployed to ${environment}!
-        ─────────────────────────────────────────────────────────
-        Environment: ${environment}
-        Port: ${port}
-        Container: ${containerName}
-        Duration: ${deploymentDuration} seconds
-        URL: http://localhost:${port}
-        ─────────────────────────────────────────────────────────
-        """
+        echo "✅ React application successfully deployed to ${environment}!"
+        echo "Environment: ${environment}"
+        echo "Port: ${port}"
+        echo "Container: ${containerName}"
+        echo "Duration: ${deploymentDuration} seconds"
+        echo "URL: http://localhost:${port}"
         
         // Show deployment status
         sh """
