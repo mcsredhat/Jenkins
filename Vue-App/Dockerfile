@@ -68,6 +68,7 @@ FROM base AS dependencies
 # ---------- Copy Dependency Files First (for better caching) ----------
 COPY package.json ./
 COPY package-lock.json* ./
+
 # ---------- Set Ownership of Dependency Files ----------
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
 
@@ -205,7 +206,8 @@ RUN addgroup -g 101 -S nginx || true && \
 
 # ---------- Copy Build Artifacts from Build Stage ----------
 COPY --from=build /app/dist /usr/share/nginx/html
-
+COPY vue-entrypoint-nonroot.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 # ---------- Create default nginx configuration ----------
 RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
     echo '    listen 8080;' >> /etc/nginx/conf.d/default.conf && \
@@ -249,6 +251,8 @@ STOPSIGNAL SIGTERM
 # ---------- Health Check ----------
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT}${HEALTH_CHECK_PATH} || exit 1
+    
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # ---------- Start nginx ----------
 CMD ["nginx", "-g", "daemon off;"]
