@@ -68,9 +68,6 @@ FROM base AS dependencies
 # ---------- Copy Dependency Files First (for better caching) ----------
 COPY package.json ./
 COPY package-lock.json* ./
-COPY yarn.lock* ./
-COPY pnpm-lock.yaml* ./
-
 # ---------- Set Ownership of Dependency Files ----------
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
 
@@ -84,15 +81,10 @@ RUN npm config set fund false && npm config set audit-level moderate
 RUN test -f package.json || (echo "package.json not found!" && exit 1)
 
 # ---------- Install Dependencies with Caching ----------
-# Delete corrupted package-lock.json if it exists and regenerate it
-RUN if [ -f package-lock.json ]; then \
-    echo "Removing existing package-lock.json to regenerate..." && \
-    rm package-lock.json; \
-    fi
-
-# Install dependencies and generate new package-lock.json
+# Install dependencies and use existing package-lock.json if available
 RUN --mount=type=cache,target=/home/${USER_NAME}/.npm,uid=${USER_ID},gid=${GROUP_ID} \
     echo "Installing dependencies..." && \
+    npm ci --only=production --no-audit --prefer-offline --progress=false 2>/dev/null || \
     npm install --no-audit --prefer-offline --progress=false
 
 # ================================
@@ -120,6 +112,9 @@ RUN echo "=== Debugging: Checking copied files ===" && \
 # ---------- Verify required files exist ----------
 RUN test -f package.json || (echo "package.json missing in build stage!" && exit 1)
 
+# ---------- Install dev dependencies for building ----------
+RUN npm install --include=dev --no-audit --prefer-offline --progress=false
+
 # ---------- Code Quality Checks (Optional - don't fail build if scripts don't exist) ----------
 RUN npm run lint 2>/dev/null || echo "Lint check skipped (script not found)"
 RUN npm run format:check 2>/dev/null || echo "Format check skipped (script not found)"
@@ -136,13 +131,13 @@ RUN if [ ! -d "src" ] || [ ! -f "src/main.js" ] && [ ! -f "src/main.ts" ]; then 
     echo '<template><div id="app"><h1>Hello Vue + Docker!</h1><p>Vue.js app is running successfully.</p></div></template>' > src/App.vue; \
     fi
 
-RUN if [ ! -d "public" ] && [ ! -f "public/index.html" ]; then \
-    echo "Creating index.html..." && \
+RUN if [ ! -d "public" ] || [ ! -f "public/index.html" ]; then \
+    echo "Creating public directory and index.html..." && \
     mkdir -p public && \
-    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Vue App</title></head><body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>' > index.html; \
+    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Vue App</title></head><body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>' > public/index.html; \
     fi
 
-RUN if [ ! -f "vite.config.js" ] && [ ! -f "vite.config.ts" ]; then \
+RUN if [ ! -f "vite.config.js" ] && [ ! -f "vite.config.ts" ] && [ ! -f "vue.config.js" ]; then \
     echo "Creating vite.config.js..." && \
     echo 'import { defineConfig } from "vite"; import vue from "@vitejs/plugin-vue"; export default defineConfig({ plugins: [vue()], build: { outDir: "dist" } });' > vite.config.js; \
     fi
@@ -163,7 +158,6 @@ RUN npm audit --audit-level=high || echo "Security audit completed with warnings
 RUN rm -rf node_modules/.cache && \
     rm -rf /tmp/* && \
     rm -rf /home/${USER_NAME}/.npm/_cacache && \
-    rm -rf src/ public/ && \
     npm cache clean --force
 
 # ================================
@@ -209,27 +203,32 @@ RUN apk update && apk add --no-cache \
 RUN addgroup -g 101 -S nginx || true && \
     adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx || true
 
-# ---------- Copy Build Artifacts from Build Stage (Vue uses 'dist' not 'build') ----------
+# ---------- Copy Build Artifacts from Build Stage ----------
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# ---------- Create default nginx configuration ----------
+RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
+    echo '    listen 80;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    server_name localhost;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    location / {' >> /etc/nginx/conf.d/default.conf && \
+    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    }' >> /etc/nginx/conf.d/default.conf && \
+    echo '    location /health {' >> /etc/nginx/conf.d/default.conf && \
+    echo '        return 200 "Vue App OK\n";' >> /etc/nginx/conf.d/default.conf && \
+    echo '        add_header Content-Type text/plain;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    }' >> /etc/nginx/conf.d/default.conf && \
+    echo '}' >> /etc/nginx/conf.d/default.conf
+
 # ---------- Set proper ownership for nginx directories ----------  
-RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx /usr/local/bin/ && \
-    chown -R nginx:nginx /usr/local/bin/ /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
-    chmod -R 755 /usr/local/bin/ /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html
-
-# ---------- Copy nginx configuration ----------
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# ---------- Copy Entrypoint Script ----------
-COPY vue-entrypoint-nonroot.sh /usr/local/bin/
-
-# ---------- Set Entrypoint Script Permissions ----------
-RUN chmod +x /usr/local/bin/vue-entrypoint-nonroot.sh 
-#chown nginx:nginx /usr/local/bin/vue-entrypoint-nonroot.sh
+RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx && \
+    chown -R nginx:nginx /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
+    chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html
 
 # ---------- Create health check endpoint ----------
-RUN echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1></body></html>' > /usr/share/nginx/html/health && \
-    chown nginx:nginx /usr/share/nginx/html/health
+RUN echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1></body></html>' > /usr/share/nginx/html/health.html && \
+    chown nginx:nginx /usr/share/nginx/html/health.html
 
 # ---------- Create directories ----------
 RUN mkdir -p ${DATA_DIR} ${LOGS_DIR} && \
@@ -251,5 +250,5 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT}${HEALTH_CHECK_PATH} || exit 1
 
-# ---------- Use Entrypoint Script ----------
-ENTRYPOINT ["/usr/local/bin/vue-entrypoint-nonroot.sh"]
+# ---------- Start nginx ----------
+CMD ["nginx", "-g", "daemon off;"]
