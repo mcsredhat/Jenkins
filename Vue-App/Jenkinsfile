@@ -94,7 +94,7 @@ pipeline {
                             sh "ls -la"
                             throw e
                         }
-                    }
+                    } 
                 }
             }
         }
