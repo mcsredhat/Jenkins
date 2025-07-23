@@ -120,21 +120,40 @@ nginx -c /etc/nginx/nginx.conf -g "daemon off;" &
 NGINX_PID=$!
 echo "Nginx started with PID: $NGINX_PID"
 
-# Verify nginx is listening on the correct port
-echo "Verifying Nginx is listening on port ${APP_PORT}..."
-if ! netstat -tuln 2>/dev/null | grep -q ":${APP_PORT}"; then
-    echo "Error: Nginx is not listening on port ${APP_PORT}"
-    docker logs $(hostname) 2>/dev/null || true
-    exit 1
-fi
-echo "Nginx is listening on port ${APP_PORT}"
+# Wait for nginx to start
+sleep 5
 
-# Wait for nginx to be ready
-sleep 2
+# Verify nginx is listening on the correct port with retries
+echo "Verifying Nginx is listening on port ${APP_PORT}..."
+for i in 1 2 3; do
+    if netstat -tuln 2>/dev/null | grep -q ":${APP_PORT}"; then
+        echo "Nginx is listening on port ${APP_PORT}"
+        break
+    else
+        echo "Attempt $i: Nginx is not yet listening on port ${APP_PORT}, retrying..."
+        sleep 2
+    fi
+    if [ $i -eq 3 ]; then
+        echo "Error: Nginx failed to listen on port ${APP_PORT} after 3 attempts"
+        echo "Debugging information:"
+        echo "Nginx logs:"
+        cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
+        echo "Nginx process status:"
+        ps aux | grep nginx || echo "No nginx processes found"
+        echo "Network status:"
+        netstat -tuln 2>/dev/null || echo "netstat not available"
+        echo "Container logs:"
+        cat /var/log/nginx/* 2>/dev/null || echo "No additional logs available"
+        exit 1
+    fi
+done
 
 # Verify nginx is running
 if ! kill -0 "$NGINX_PID" 2>/dev/null; then
     echo "Error: Nginx failed to start"
+    echo "Debugging information:"
+    echo "Nginx logs:"
+    cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
     exit 1
 fi
 
@@ -151,6 +170,9 @@ if command -v curl >/dev/null 2>&1; then
         fi
         if [ $i -eq 3 ]; then
             echo "Warning: Health check failed after 3 attempts"
+            echo "Debugging information:"
+            echo "Nginx logs:"
+            cat /var/log/nginx/error.log 2>/dev/null || echo "No error log available"
         fi
     done
 else
