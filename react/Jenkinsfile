@@ -209,7 +209,7 @@ pipeline {
 
         stage('Security Scan') {
             when {
-                not { environment name: 'SKIP_SECURITY_SCAN'; value: 'true' }
+                not { environment name: 'SKIP_SECURITY_SCAN', value: 'true' }
             }
             steps {
                 echo "🔍 Running security scan on React application image..."
@@ -274,7 +274,7 @@ pipeline {
                 anyOf {
                     branch 'main'
                     branch 'develop'
-                    environment name: 'ENABLE_DOCKER_PUSH'; value: 'true'
+                    environment name: 'ENABLE_DOCKER_PUSH', value: 'true'
                 }
             }
             steps {
@@ -316,7 +316,7 @@ pipeline {
             when {
                 anyOf {
                     branch 'develop'
-                    environment name: 'ENABLE_STAGING_DEPLOY'; value: 'true'
+                    environment name: 'ENABLE_STAGING_DEPLOY', value: 'true'
                 }
             }
             steps {
@@ -331,7 +331,7 @@ pipeline {
             when {
                 anyOf {
                     branch 'main'
-                    environment name: 'ENABLE_PRODUCTION_DEPLOY'; value: 'true'
+                    environment name: 'ENABLE_PRODUCTION_DEPLOY', value: 'true'
                 }
             }
             steps {
@@ -356,7 +356,7 @@ pipeline {
             when {
                 anyOf {
                     branch 'main'
-                    environment name: 'ENABLE_PRODUCTION_DEPLOY'; value: 'true'
+                    environment name: 'ENABLE_PRODUCTION_DEPLOY', value: 'true'
                 }
             }
             steps {
