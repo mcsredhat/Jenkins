@@ -1,3 +1,4 @@
+```dockerfile
 # =============================================================================
 # REACT 4-STAGE MULTI-STAGE DOCKERFILE TEMPL
 # =============================================================================
@@ -67,7 +68,6 @@ FROM base AS dependencies
 COPY package.json ./
 COPY package-lock.json* ./
 
-
 # ---------- Set Ownership of Dependency Files ----------
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
 
@@ -77,9 +77,8 @@ USER ${USER_NAME}
 # ---------- Configure npm settings ----------
 RUN npm config set fund false && npm config set audit-level moderate
 
-# ---------- Install Dependencies with Caching ----------
-RUN --mount=type=cache,target=/home/${USER_NAME}/.npm,uid=${USER_ID},gid=${GROUP_ID} \
-    npm install --no-audit --prefer-offline --progress=false
+# ---------- Install Dependencies (without --mount) ----------
+RUN npm install --no-audit --prefer-offline --progress=false
 
 # ================================
 # Stage 3: Build Stage
@@ -222,3 +221,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # ---------- Use Entrypoint Script ----------
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+```
