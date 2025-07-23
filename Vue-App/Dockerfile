@@ -208,7 +208,7 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 # ---------- Create default nginx configuration ----------
 RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
-    echo '    listen 80;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    listen 8080;' >> /etc/nginx/conf.d/default.conf && \
     echo '    server_name localhost;' >> /etc/nginx/conf.d/default.conf && \
     echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
     echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
