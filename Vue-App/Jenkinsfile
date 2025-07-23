@@ -100,68 +100,56 @@ pipeline {
         }
 
         stage('Test Vue.js Application') {
-            steps {
-                echo "🧪 Testing Vue.js application in container..."
-                dir("${APP_DIR}") {
-                    script {
-                        try {
-                            sh """
-                                echo "Starting Vue.js test container..."
-                                docker run -d --name ${TEST_CONTAINER_NAME} \
-                                    -p ${TEST_PORT}:8088 \
-                                    --health-cmd="curl -f http://localhost:8088/health || exit 1" \
-                                    --health-interval=10s \
-                                    --health-timeout=5s \
-                                    --health-retries=3 \
-                                    ${IMAGE_NAME}:${BUILD_TAG}
-                                
-                                # Wait longer for container to stabilize
-                                sleep 30
-                                
-                                # Check if container is running
-                                if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
-                                    echo "❌ Container failed to start"
-                                    docker logs ${TEST_CONTAINER_NAME}
-                                    docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
-                                    exit 1
-                                fi
-                                
-                                # Retry health check
-                                for i in {1..5}; do
-                                    if curl -f http://localhost:${TEST_PORT}/health; then
-                                        echo "✅ Health check passed"
-                                        break
-                                    else
-                                        echo "⚠️ Health check attempt \$i failed, retrying..."
-                                        sleep 5
-                                    fi
-                                    if [ \$i -eq 5 ]; then
-                                        echo "❌ Health check failed after 5 attempts"
-                                        docker logs ${TEST_CONTAINER_NAME}
-                                        docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
-                                        exit 1
-                                    fi
-                                done
-                            """
-                        } catch (Exception e) {
-                            echo "❌ Vue.js application tests failed: ${e.getMessage()}"
-                            sh """
-                                echo "🔍 Debugging information:"
-                                docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
-                                docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
-                                docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
-                            """
-                            throw e
-                        } finally {
-                            sh """
-                                docker stop ${TEST_CONTAINER_NAME} || true
-                                docker rm ${TEST_CONTAINER_NAME} || true
-                            """
-                        }
-                    }
+    steps {
+        echo "🧪 Testing Vue.js application in container..."
+        dir("${APP_DIR}") {
+            script {
+                try {
+                    // Start container with better error handling
+                    sh """
+                        echo "Starting Vue.js test container..."
+                        docker run -d --name ${TEST_CONTAINER_NAME} \
+                            -p ${TEST_PORT}:8080 \
+                            --health-cmd="curl -f http://localhost:8080/health || exit 1" \
+                            --health-interval=10s \
+                            --health-timeout=5s \
+                            --health-retries=3 \
+                            ${IMAGE_NAME}:${BUILD_TAG}
+                        
+                        # Wait a moment for container to start
+                        sleep 5
+                        
+                        # Check if container is running
+                        if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
+                            echo "❌ Container failed to start"
+                            docker logs ${TEST_CONTAINER_NAME}
+                            exit 1
+                        fi
+                    """
+                    
+                    echo "⌛ Waiting for Vue.js application to start..."
+                    sleep 15
+                    
+                    // Rest of your testing logic...
+                } catch (Exception e) {
+                    echo "❌ Vue.js application tests failed: ${e.getMessage()}"
+                    sh """
+                        echo "🔍 Debugging information:"
+                        docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
+                        docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
+                        docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.Error}}'
+                    """
+                    throw e
+                } finally {
+                    sh """
+                        docker stop ${TEST_CONTAINER_NAME} || true
+                        docker rm ${TEST_CONTAINER_NAME} || true
+                    """
                 }
             }
         }
+    }
+}
 
         stage('Security Scan') {
             when {
@@ -416,14 +404,14 @@ def deployVueApp(environment, port) {
         sh """
             docker run -d \
                 --name ${containerName} \
-                -p ${port}:8088 \
+                -p ${port}:${APP_PORT} \
                 -e NODE_ENV=production \
                 -e VUE_APP_ENV=${environment} \
                 -e ENVIRONMENT=${environment} \
                 --restart=unless-stopped \
                 --memory=512m \
                 --cpus=1.0 \
-                --health-cmd="curl -f http://localhost:8088/health || curl -f http://localhost:8088/ || exit 1" \
+                --health-cmd="curl -f http://localhost:${APP_PORT}/health || curl -f http://localhost:${APP_PORT}/ || exit 1" \
                 --health-interval=30s \
                 --health-timeout=10s \
                 --health-retries=3 \
@@ -431,27 +419,20 @@ def deployVueApp(environment, port) {
                 ${IMAGE_NAME}:${BUILD_TAG}
         """
         echo "⌛ Waiting for Vue.js application to stabilize in ${environment}..."
-        sleep 30
+        sleep 20
         echo "🔍 Verifying Vue.js application deployment..."
-        sh """
-            echo "Testing Vue.js application health..."
-            for i in {1..5}; do
-                if curl -f http://localhost:${port}/health; then
-                    echo "✅ Health check passed"
-                    break
-                else
-                    echo "⚠️ Health check attempt \$i failed, retrying..."
-                    sleep 5
-                fi
-                if [ \$i -eq 5 ]; then
-                    echo "❌ Health check failed after 5 attempts"
+        retry(5) {
+            sh """
+                echo "Testing Vue.js application health..."
+                curl -f http://localhost:${port}/health || curl -f http://localhost:${port}/ || {
+                    echo "Health check failed, checking container status..."
                     docker ps | grep ${containerName}
-                    docker logs ${containerName} | tail -20
-                    docker inspect ${containerName} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
+                    docker logs ${containerName} | tail -10
                     exit 1
-                fi
-            done
-        """
+                }
+            """
+            sleep 5
+        }
         def deploymentEndTime = System.currentTimeMillis()
         def deploymentDuration = (deploymentEndTime - deploymentStartTime) / 1000
         echo "✅ Vue.js application successfully deployed to ${environment}!"
@@ -472,7 +453,7 @@ def deployVueApp(environment, port) {
             echo "🔍 Deployment debugging information:"
             docker ps -a | grep ${containerName} || echo "Container not found"
             docker logs ${containerName} || echo "No logs available"
-            docker inspect ${containerName} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
+            docker inspect ${containerName} || echo "Cannot inspect container"
         """
         throw e
     }
