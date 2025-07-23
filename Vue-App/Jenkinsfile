@@ -8,11 +8,11 @@ pipeline {
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
         CONTAINER_NAME = "vue-app-${env.BUILD_NUMBER}"
-        TEST_CONTAINER_NAME = "test-vue-${env.BUILD_NUMBER}"
+        TEST_CONTAINER_NAME = "test-vue-${env.BUILD_NUMBER}" 
         APP_PORT = "8088"
-        TEST_PORT = "3001"
-        STAGING_PORT = "3002"
-        PRODUCTION_PORT = "3003"
+        TEST_PORT = "3000"
+        STAGING_PORT = "3001"
+        PRODUCTION_PORT = "3002"
         GITHUB_REPO = 'https://github.com/mcsredhat/Jenkins'
         SKIP_SECURITY_SCAN = 'false'
         ENABLE_DOCKER_PUSH = 'true'
