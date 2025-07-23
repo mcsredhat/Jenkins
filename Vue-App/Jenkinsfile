@@ -122,6 +122,7 @@ pipeline {
                                 if ! docker ps | grep -q ${TEST_CONTAINER_NAME}; then
                                     echo "❌ Container failed to start"
                                     docker logs ${TEST_CONTAINER_NAME}
+                                    docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
                                     exit 1
                                 fi
                                 
@@ -137,6 +138,7 @@ pipeline {
                                     if [ \$i -eq 5 ]; then
                                         echo "❌ Health check failed after 5 attempts"
                                         docker logs ${TEST_CONTAINER_NAME}
+                                        docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
                                         exit 1
                                     fi
                                 done
@@ -147,7 +149,7 @@ pipeline {
                                 echo "🔍 Debugging information:"
                                 docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
                                 docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
-                                docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.Error}}'
+                                docker inspect ${TEST_CONTAINER_NAME} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
                             """
                             throw e
                         } finally {
@@ -445,6 +447,7 @@ def deployVueApp(environment, port) {
                     echo "❌ Health check failed after 5 attempts"
                     docker ps | grep ${containerName}
                     docker logs ${containerName} | tail -20
+                    docker inspect ${containerName} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
                     exit 1
                 fi
             done
@@ -469,7 +472,7 @@ def deployVueApp(environment, port) {
             echo "🔍 Deployment debugging information:"
             docker ps -a | grep ${containerName} || echo "Container not found"
             docker logs ${containerName} || echo "No logs available"
-            docker inspect ${containerName} || echo "Cannot inspect container"
+            docker inspect ${containerName} --format='{{.State.Status}}: {{.State.ExitCode}} {{.State.Error}}' || echo "Cannot inspect container"
         """
         throw e
     }
