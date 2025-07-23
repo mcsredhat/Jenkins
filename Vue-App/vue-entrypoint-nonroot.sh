@@ -47,22 +47,13 @@ echo "Vue application files verified successfully"
 
 # Test nginx configuration
 echo "Testing nginx configuration..."
-nginx -t 2>/dev/null || {
+nginx -t -c /etc/nginx/nginx.conf 2>/dev/null || {
     echo "Error: Nginx configuration test failed"
-    # Show more details about the error
-    nginx -t
+    nginx -t -c /etc/nginx/nginx.conf
     exit 1
 }
 
 echo "Nginx configuration test passed"
-
-# Create health check endpoint if it doesn't exist
-if [ ! -f "/usr/share/nginx/html/health" ]; then
-    echo "Creating health check endpoint..."
-    echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1><p>Service is running on port '${APP_PORT}'</p><p>User: '${USER_NAME}'</p><p>Time: '$(date)'</p></body></html>' > /usr/share/nginx/html/health 2>/dev/null || {
-        echo "Warning: Could not create health check endpoint"
-    }
-fi
 
 # Create a simple 404 page if it doesn't exist
 if [ ! -f "/usr/share/nginx/html/404.html" ]; then
@@ -124,10 +115,19 @@ fi
 
 # Start nginx in the background
 echo "Starting nginx server on port ${APP_PORT}..."
-nginx -g "daemon off;" &
+nginx -c /etc/nginx/nginx.conf -g "daemon off;" &
 
 NGINX_PID=$!
 echo "Nginx started with PID: $NGINX_PID"
+
+# Verify nginx is listening on the correct port
+echo "Verifying Nginx is listening on port ${APP_PORT}..."
+if ! netstat -tuln 2>/dev/null | grep -q ":${APP_PORT}"; then
+    echo "Error: Nginx is not listening on port ${APP_PORT}"
+    docker logs $(hostname) 2>/dev/null || true
+    exit 1
+fi
+echo "Nginx is listening on port ${APP_PORT}"
 
 # Wait for nginx to be ready
 sleep 2
