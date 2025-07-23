@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -22,7 +21,8 @@ pipeline {
         EMAIL_CONFIGURED = 'false'
         NODE_ENV = 'production'
         CI = 'true'
-        // Removed APP_DIR since files are in the root
+        APP_DIR = 'react'
+        DOCKER_BUILDKIT = '0' // Disable Buildx
     }
 
     stages {
@@ -30,35 +30,37 @@ pipeline {
             steps {
                 echo "📦 Checking out React application code..."
                 checkout scm
-                script {
-                    echo """
-                    🚀 React Application Build Information:
-                    ─────────────────────────────────────────
-                    Branch: ${env.BRANCH_NAME ?: 'main'}
-                    Commit: ${env.GIT_COMMIT ?: 'unknown'}
-                    Build Tag: ${BUILD_TAG}
-                    Image: ${IMAGE_NAME}:${BUILD_TAG}
-                    Repository: ${GITHUB_REPO}
-                    ─────────────────────────────────────────
-                    """
-                    echo "🔍 Verifying React project structure..."
-                    sh """
-                        echo "Root directory contents:"
-                        ls -la
-                        echo "Checking for React essentials:"
-                        test -f package.json && echo "✅ package.json found" || echo "❌ package.json missing"
-                        test -f Dockerfile && echo "✅ Dockerfile found" || echo "❌ Dockerfile missing"
-                        test -d src && echo "✅ src directory found" || echo "❌ src directory missing"
-                        test -d public && echo "✅ public directory found" || echo "❌ public directory missing"
-                        echo "Package.json contents:"
-                        cat package.json | head -20
-                        echo "Listing src directory contents:"
-                        ls -la src || echo "⚠️ src directory not found"
-                        echo "Listing public directory contents:"
-                        ls -la public || echo "⚠️ public directory not found"
-                        echo "Listing build directory contents:"
-                        ls -la build || echo "⚠️ build directory not found (may not exist yet)"
-                    """
+                dir("${APP_DIR}") {
+                    script {
+                        echo """
+                        🚀 React Application Build Information:
+                        ─────────────────────────────────────────
+                        Branch: ${env.BRANCH_NAME ?: 'main'}
+                        Commit: ${env.GIT_COMMIT ?: 'unknown'}
+                        Build Tag: ${BUILD_TAG}
+                        Image: ${IMAGE_NAME}:${BUILD_TAG}
+                        Repository: ${GITHUB_REPO}
+                        ─────────────────────────────────────────
+                        """
+                        echo "🔍 Verifying React project structure..."
+                        sh """
+                            echo "Root directory contents (react/):"
+                            ls -la
+                            echo "Checking for React essentials:"
+                            test -f package.json && echo "✅ package.json found" || { echo "❌ package.json missing"; exit 1; }
+                            test -f Dockerfile && echo "✅ Dockerfile found" || { echo "❌ Dockerfile missing"; exit 1; }
+                            test -d src && echo "✅ src directory found" || echo "❌ src directory missing"
+                            test -d public && echo "✅ public directory found" || echo "❌ public directory missing"
+                            echo "Package.json contents:"
+                            cat package.json | head -20
+                            echo "Listing src directory contents:"
+                            ls -la src || echo "⚠️ src directory not found"
+                            echo "Listing public directory contents:"
+                            ls -la public || echo "⚠️ public directory not found"
+                            echo "Listing build directory contents:"
+                            ls -la build || echo "⚠️ build directory not found (may not exist yet)"
+                        """
+                    }
                 }
             }
         }
@@ -66,29 +68,31 @@ pipeline {
         stage('Build React Application') {
             steps {
                 echo "🔧 Building React application with multi-stage Docker build..."
-                script {
-                    try {
-                        echo "Building all stages: base -> dependencies -> build -> production"
-                        def buildStartTime = System.currentTimeMillis()
-                        def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", "--build-arg APP_NAME=react-app --build-arg APP_VERSION=${BUILD_TAG} --build-arg BUILD_ENV=production --build-arg NODE_ENV=production --target production .")
-                        def buildEndTime = System.currentTimeMillis()
-                        def buildDuration = (buildEndTime - buildStartTime) / 1000
-                        image.tag("latest")
-                        image.tag("jenkins-build-${env.BUILD_NUMBER}")
-                        echo "✅ React application built successfully!"
-                        echo "Build Duration: ${buildDuration} seconds"
-                        echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
-                        sh """
-                            echo "📊 Image Information:"
-                            docker images ${IMAGE_NAME}:${BUILD_TAG}
-                            echo "🔍 Image Layers:"
-                            docker history ${IMAGE_NAME}:${BUILD_TAG} --no-trunc || true
-                        """
-                    } catch (Exception e) {
-                        echo "❌ React build failed: ${e.getMessage()}"
-                        echo "🔍 Docker build context:"
-                        sh "ls -la"
-                        throw e
+                dir("${APP_DIR}") {
+                    script {
+                        try {
+                            echo "Building all stages: base -> dependencies -> build -> production"
+                            def buildStartTime = System.currentTimeMillis()
+                            def image = docker.build("${IMAGE_NAME}:${BUILD_TAG}", ".")
+                            def buildEndTime = System.currentTimeMillis()
+                            def buildDuration = (buildEndTime - buildStartTime) / 1000
+                            image.tag("latest")
+                            image.tag("jenkins-build-${env.BUILD_NUMBER}")
+                            echo "✅ React application built successfully!"
+                            echo "Build Duration: ${buildDuration} seconds"
+                            echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
+                            sh """
+                                echo "📊 Image Information:"
+                                docker images ${IMAGE_NAME}:${BUILD_TAG}
+                                echo "🔍 Image Layers:"
+                                docker history ${IMAGE_NAME}:${BUILD_TAG} --no-trunc || true
+                            """
+                        } catch (Exception e) {
+                            echo "❌ React build failed: ${e.getMessage()}"
+                            echo "🔍 Docker build context:"
+                            sh "ls -la"
+                            throw e
+                        }
                     }
                 }
             }
@@ -97,60 +101,62 @@ pipeline {
         stage('Test React Application') {
             steps {
                 echo "🧪 Testing React application in container..."
-                script {
-                    try {
-                        sh """
-                            echo "Starting React test container..."
-                            docker run -d --name ${TEST_CONTAINER_NAME} \
-                                -p ${TEST_PORT}:${APP_PORT} \
-                                -e NODE_ENV=production \
-                                -e REACT_APP_ENV=test \
-                                --health-cmd="curl -f http://localhost:${APP_PORT}/health || curl -f http://localhost:${APP_PORT}/ || exit 1" \
-                                --health-interval=10s \
-                                --health-timeout=5s \
-                                --health-retries=3 \
-                                ${IMAGE_NAME}:${BUILD_TAG}
-                        """
-                        echo "⌛ Waiting for React application to start..."
-                        sleep 15
-                        echo "🔍 Checking container health..."
-                        retry(6) {
-                            sleep 10
+                dir("${APP_DIR}") {
+                    script {
+                        try {
                             sh """
-                                echo "Checking container status..."
-                                docker ps | grep ${TEST_CONTAINER_NAME}
-                                echo "Testing application endpoints..."
-                                curl -f http://localhost:${TEST_PORT}/health || \
-                                curl -f -I http://localhost:${TEST_PORT}/ || \
-                                (echo "Both endpoints failed" && exit 1)
+                                echo "Starting React test container..."
+                                docker run -d --name ${TEST_CONTAINER_NAME} \
+                                    -p ${TEST_PORT}:${APP_PORT} \
+                                    -e NODE_ENV=production \
+                                    -e REACT_APP_ENV=test \
+                                    --health-cmd="curl -f http://localhost:${APP_PORT}/health || curl -f http://localhost:${APP_PORT}/ || exit 1" \
+                                    --health-interval=10s \
+                                    --health-timeout=5s \
+                                    --health-retries=3 \
+                                    ${IMAGE_NAME}:${BUILD_TAG}
+                            """
+                            echo "⌛ Waiting for React application to start..."
+                            sleep 15
+                            echo "🔍 Checking container health..."
+                            retry(6) {
+                                sleep 10
+                                sh """
+                                    echo "Checking container status..."
+                                    docker ps | grep ${TEST_CONTAINER_NAME}
+                                    echo "Testing application endpoints..."
+                                    curl -f http://localhost:${TEST_PORT}/health || \
+                                    curl -f -I http://localhost:${TEST_PORT}/ || \
+                                    (echo "Both endpoints failed" && exit 1)
+                                """
+                            }
+                            echo "🔍 Running comprehensive React application tests..."
+                            sh """
+                                echo "Testing React application responses..."
+                                response=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${TEST_PORT}/)
+                                echo "Root endpoint response: \$response"
+                                [ "\$response" = "200" ] || echo "Warning: Root endpoint returned \$response"
+                                curl -I http://localhost:${TEST_PORT}/static/ 2>/dev/null || echo "Static assets endpoint not available"
+                                echo "Container logs:"
+                                docker logs ${TEST_CONTAINER_NAME} | tail -20
+                                docker exec ${TEST_CONTAINER_NAME} ls -la /usr/share/nginx/html/ || echo "Could not list nginx html directory"
+                            """
+                            echo "✅ All React application tests passed!"
+                        } catch (Exception e) {
+                            echo "❌ React application tests failed: ${e.getMessage()}"
+                            sh """
+                                echo "🔍 Debugging information:"
+                                docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
+                                docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
+                                docker inspect ${TEST_CONTAINER_NAME} || echo "Could not inspect container"
+                            """
+                            throw e
+                        } finally {
+                            sh """
+                                docker stop ${TEST_CONTAINER_NAME} || true
+                                docker rm ${TEST_CONTAINER_NAME} || true
                             """
                         }
-                        echo "🔍 Running comprehensive React application tests..."
-                        sh """
-                            echo "Testing React application responses..."
-                            response=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${TEST_PORT}/)
-                            echo "Root endpoint response: \$response"
-                            [ "\$response" = "200" ] || echo "Warning: Root endpoint returned \$response"
-                            curl -I http://localhost:${TEST_PORT}/static/ 2>/dev/null || echo "Static assets endpoint not available"
-                            echo "Container logs:"
-                            docker logs ${TEST_CONTAINER_NAME} | tail -20
-                            docker exec ${TEST_CONTAINER_NAME} ls -la /usr/share/nginx/html/ || echo "Could not list nginx html directory"
-                        """
-                        echo "✅ All React application tests passed!"
-                    } catch (Exception e) {
-                        echo "❌ React application tests failed: ${e.getMessage()}"
-                        sh """
-                            echo "🔍 Debugging information:"
-                            docker ps -a | grep ${TEST_CONTAINER_NAME} || echo "Container not found"
-                            docker logs ${TEST_CONTAINER_NAME} || echo "Could not retrieve logs"
-                            docker inspect ${TEST_CONTAINER_NAME} || echo "Could not inspect container"
-                        """
-                        throw e
-                    } finally {
-                        sh """
-                            docker stop ${TEST_CONTAINER_NAME} || true
-                            docker rm ${TEST_CONTAINER_NAME} || true
-                        """
                     }
                 }
             }
