@@ -72,7 +72,7 @@ COPY package-lock.json* ./
 RUN chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR}
 
 # ---------- Switch to Build User ----------
-#USER ${USER_NAME}
+USER ${USER_NAME}
 
 # ---------- Configure npm settings ----------
 RUN npm config set fund false && npm config set audit-level moderate
@@ -235,7 +235,7 @@ RUN mkdir -p ${DATA_DIR} ${LOGS_DIR} && \
     chown -R nginx:nginx ${DATA_DIR} ${LOGS_DIR}
 
 # ---------- Switch to non-root user ----------
-USER nginx
+#USER nginx
 
 # ---------- Setup Volumes ----------
 VOLUME ["${DATA_DIR}", "${LOGS_DIR}"]
