@@ -196,7 +196,8 @@ RUN apk update && apk add --no-cache \
     curl \
     wget \
     tzdata \
-    shadow && \
+    shadow \
+    net-tools && \
     rm -rf /var/cache/apk/*
 
 # ---------- Create non-root user for nginx ----------
@@ -206,36 +207,27 @@ RUN addgroup -g 101 -S nginx || true && \
 # ---------- Copy Build Artifacts from Build Stage ----------
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# ---------- Create default nginx configuration ----------
-RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
-    echo '    listen 8080;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    server_name localhost;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location / {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location /health {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        return 200 "Vue App OK\n";' >> /etc/nginx/conf.d/default.conf && \
-    echo '        add_header Content-Type text/plain;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '}' >> /etc/nginx/conf.d/default.conf
+# ---------- Copy custom nginx configuration ----------
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# ---------- Set proper ownership for nginx directories ----------  
-RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx && \
-    chown -R nginx:nginx /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
-    chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html 
-
-# ---------- Create health check endpoint ----------
-RUN echo '<!DOCTYPE html><html><head><title>Health Check</title></head><body><h1>Vue App OK</h1></body></html>' > /usr/share/nginx/html/health.html && \
-    chown nginx:nginx /usr/share/nginx/html/health.html
+# ---------- Set proper ownership and permissions ----------
+RUN mkdir -p /var/cache/nginx /var/run/nginx /var/log/nginx /tmp/client_temp /tmp/proxy_temp_path /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp && \
+    chown -R nginx:nginx /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html /tmp/client_temp /tmp/proxy_temp_path /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp /etc/nginx/nginx.conf && \
+    chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx/html && \
+    chmod -R 777 /tmp/client_temp /tmp/proxy_temp_path /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp && \
+    chmod 644 /etc/nginx/nginx.conf
 
 # ---------- Create directories ----------
 RUN mkdir -p ${DATA_DIR} ${LOGS_DIR} && \
     chown -R nginx:nginx ${DATA_DIR} ${LOGS_DIR}
 
+# ---------- Copy entrypoint script ----------
+COPY vue-entrypoint-nonroot.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh && \
+    chown nginx:nginx /docker-entrypoint.sh
+
 # ---------- Switch to non-root user ----------
-#USER nginx
+USER nginx
 
 # ---------- Setup Volumes ----------
 VOLUME ["${DATA_DIR}", "${LOGS_DIR}"]
@@ -250,5 +242,5 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT}${HEALTH_CHECK_PATH} || exit 1
 
-# ---------- Start nginx ----------
-CMD ["nginx", "-g", "daemon off;"]
+# ---------- Start with entrypoint script ----------
+CMD ["/docker-entrypoint.sh"]
