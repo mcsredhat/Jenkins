@@ -235,7 +235,7 @@ RUN mkdir -p ${DATA_DIR} ${LOGS_DIR} && \
     chown -R nginx:nginx ${DATA_DIR} ${LOGS_DIR}
 
 # ---------- Switch to non-root user ----------
-USER ${USER_NAME}
+#USER nginx
 
 # ---------- Setup Volumes ----------
 VOLUME ["${DATA_DIR}", "${LOGS_DIR}"]
