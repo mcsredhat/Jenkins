@@ -205,10 +205,6 @@ RUN addgroup -g 101 -S nginx || true && \
 
 # ---------- Copy Build Artifacts from Build Stage ----------
 COPY --from=build /app/dist /usr/share/nginx/html
-# In your Dockerfile, ensure you have:
-COPY vue-entrypoint-nonroot.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
 
 # ---------- Create default nginx configuration ----------
 RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
@@ -239,7 +235,7 @@ RUN mkdir -p ${DATA_DIR} ${LOGS_DIR} && \
     chown -R nginx:nginx ${DATA_DIR} ${LOGS_DIR}
 
 # ---------- Switch to non-root user ----------
-USER ${USER_NAME}
+#USER nginx
 
 # ---------- Setup Volumes ----------
 VOLUME ["${DATA_DIR}", "${LOGS_DIR}"]
@@ -253,8 +249,6 @@ STOPSIGNAL SIGTERM
 # ---------- Health Check ----------
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${APP_PORT}${HEALTH_CHECK_PATH} || exit 1
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # ---------- Start nginx ----------
 CMD ["nginx", "-g", "daemon off;"]
