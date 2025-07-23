@@ -169,4 +169,4 @@ ls -la /usr/share/nginx/html/ | head -10
 echo "=== End Information ==="
 
 # Wait for the nginx process
-wait "$NGINX_PID"
+wait "$NGINX_PID" 
