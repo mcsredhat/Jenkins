@@ -10,12 +10,12 @@ import { CommonModule } from '@angular/common';
       <div class="container">
         <div class="hero-content">
           <div class="text-content">
-            <h1 class="hero-title">Hello, I'm <span class="highlight">John Doe</span></h1>
-            <h2 class="hero-subtitle">Full Stack Developer</h2>
+            <h1 class="hero-title">WELCOME to my profile , I'm <span class="highlight">FARAJ ASSULAI</span></h1>
+            <h2 class="hero-subtitle">Network Engineering </h2>
             <p class="hero-description">
-              I'm a passionate developer with 5+ years of experience creating 
+              I'm a passionate DevOps with  2 years of experience creating 
               beautiful and functional web applications. I specialize in modern 
-              JavaScript frameworks and love turning ideas into reality.
+              JavaScript frameworks help turn ideas into reality.
             </p>
             <div class="cta-buttons">
               <a href="#projects" class="btn btn-primary">View My Work</a>
