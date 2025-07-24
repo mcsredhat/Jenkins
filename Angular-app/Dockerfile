@@ -208,7 +208,7 @@ LABEL maintainer="farajassulai@gmail.com" \
     stage="production"
 
 # ---------- Production Arguments ----------
-ARG APP_PORT=80
+ARG APP_PORT=8088
 ARG HEALTH_CHECK_PATH="/health"
 ARG TIMEZONE="UTC"
 ARG USER_NAME="nginx"
