@@ -46,23 +46,27 @@ pipeline {
                         """
                         echo "🔍 Verifying Angular project structure..."
                         sh """
+                            echo "present working directory contents (angular-App/):"
+                            pwd 
                             echo "Root directory contents (angular-App/):"
                             ls -la
                             echo "Checking for Angular essentials:"
                             test -f package.json && echo "✅ package.json found" || { echo "❌ package.json missing"; exit 1; }
+                            test -f angular.json && echo "✅ package.json found" || { echo "❌ package.json missing"; exit 1; }
                             test -f Dockerfile && echo "✅ Dockerfile found" || { echo "❌ Dockerfile missing"; exit 1; }
+                            test -f Jenkinsile && echo "✅ Dockerfile found" || { echo "❌ Jenkinsfile missing"; exit 1; }
                             test -d src && echo "✅ src directory found" || echo "❌ src directory missing"
-                            test -d public && echo "✅ public directory found" || echo "❌ public directory missing"
+                            test -d dist && echo "✅ public directory found" || echo "❌ public directory missing"
                             echo "Package.json contents:"
                             cat package.json | head -20 || echo "Could not read package.json"
                             echo "Listing src directory contents:"
                             ls -la src 2>/dev/null || echo "⚠️ src directory not found"
                             echo "Listing public directory contents:"
-                            ls -la public 2>/dev/null || echo "⚠️ public directory not found"
+                            ls -la dist 2>/dev/null || echo "⚠️ public directory not found"
                             echo "Listing dist directory contents:"
-                            ls -la dist 2>/dev/null || echo "⚠️ dist directory not found (will be created during build)"
+                            ls -la dist/portfolio-project 2>/dev/null || echo "⚠️ dist directory not found (will be created during build)"
                             echo "Checking for Angular config files:"
-                            ls -la vite.config.* angular.config.* 2>/dev/null || echo "No angular config files found (will be created if needed)"
+                            ls -la nginx.conf 2>/dev/null || echo "No nginx config files found (will be created if needed)"
                         """
                     }
                 }
