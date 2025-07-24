@@ -59,9 +59,6 @@ RUN mkdir -p ${APP_DIR} ${APP_DIR_PATH} && \
 # ================================
 # Stage 2: Dependencies Stage
 # ================================
-# ================================
-# Stage 2: Dependencies Stage
-# ================================
 FROM base AS dependencies
 
 # ---------- Debug: List build context to verify files ----------
@@ -71,7 +68,6 @@ RUN echo "=== Debugging: Listing build context ===" && \
 
 # ---------- Copy Dependency Files from Build Context ----------
 COPY package.json ${APP_DIR}/
-
 
 # ---------- Verify package.json contents ----------
 RUN echo "=== Verifying package.json ===" && \
@@ -95,10 +91,12 @@ RUN echo "=== INSTALLING DEV DEPENDENCIES ===" && \
     npm install --legacy-peer-deps --no-audit --verbose --only=dev 2>&1) || \
     (echo "=== ALL INSTALL STRATEGIES FAILED FOR DEV DEPENDENCIES!" && exit 1)
 
-# ---------- Force TypeScript 5.8.0 Installation ----------
-RUN echo "=== Forcing TypeScript 5.8.0 installation ===" && \
-    npm install --no-audit --verbose typescript@5.8.0 2>&1 || \
-    (echo "=== Failed to install TypeScript 5.8.0!" && exit 1)
+# ---------- Force TypeScript 5.8.3 Installation (FIXED VERSION) ----------
+RUN echo "=== Forcing TypeScript 5.8.3 installation ===" && \
+    npm install --no-audit --verbose typescript@5.8.3 2>&1 || \
+    (echo "=== Failed to install TypeScript 5.8.3, trying latest 5.8.x ===" && \
+    npm install --no-audit --verbose typescript@^5.8.0 2>&1) || \
+    (echo "=== Failed to install TypeScript!" && exit 1)
 
 # ---------- Debug: Verify critical dependencies ----------
 RUN echo "=== Verifying critical dependencies ===" && \
