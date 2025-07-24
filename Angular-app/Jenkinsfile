@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'https://index.docker.io/v1/'
         DOCKER_USERNAME = 'farajassulai'
-        DOCKER_REPO = 'angular-app'
+        DOCKER_REPO = 'Angular'
         IMAGE_NAME = "${DOCKER_USERNAME}/${DOCKER_REPO}"
         BUILD_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
         CONTAINER_NAME = "angular-app-${env.BUILD_NUMBER}"
@@ -21,7 +21,7 @@ pipeline {
         EMAIL_CONFIGURED = 'false'
         NODE_ENV = 'production'
         CI = 'true'
-        APP_DIR = 'angular-App'
+        APP_DIR = 'Angular-app'
         // ... other variables
         ANGULAR_VERSION = '20.0.4'
         NODE_VERSION = '22'
@@ -54,7 +54,6 @@ pipeline {
                             test -f package.json && echo "✅ package.json found" || { echo "❌ package.json missing"; exit 1; }
                             test -f angular.json && echo "✅ package.json found" || { echo "❌ package.json missing"; exit 1; }
                             test -f Dockerfile && echo "✅ Dockerfile found" || { echo "❌ Dockerfile missing"; exit 1; }
-                            test -f Jenkinsile && echo "✅ Dockerfile found" || { echo "❌ Jenkinsfile missing"; exit 1; }
                             test -d src && echo "✅ src directory found" || echo "❌ src directory missing"
                             test -d dist && echo "✅ public directory found" || echo "❌ public directory missing"
                             echo "Package.json contents:"
