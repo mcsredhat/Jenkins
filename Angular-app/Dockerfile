@@ -71,7 +71,7 @@ RUN echo "=== Debugging: Listing build context ===" && \
 
 # ---------- Copy Dependency Files from Build Context ----------
 COPY package.json ${APP_DIR}/
-COPY package-lock.json ${APP_DIR}/
+
 
 # ---------- Verify package.json contents ----------
 RUN echo "=== Verifying package.json ===" && \
