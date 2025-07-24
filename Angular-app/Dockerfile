@@ -59,6 +59,9 @@ RUN mkdir -p ${APP_DIR} ${APP_DIR_PATH} && \
 # ================================
 # Stage 2: Dependencies Stage
 # ================================
+# ================================
+# Stage 2: Dependencies Stage
+# ================================
 FROM base AS dependencies
 
 # ---------- Debug: List build context to verify files ----------
@@ -79,7 +82,7 @@ RUN npm config set registry https://registry.npmjs.org/
 
 # ---------- Install Dependencies as Root (Clean Install) ----------
 RUN echo "=== ATTEMPTING CLEAN INSTALL (DEPENDENCIES) ===" && \
-    rm -rf node_modules package-lock.json ~/.npm && \
+    rm -rf node_modules ~/.npm && \
     npm install --no-audit --verbose --production 2>&1 || \
     (echo "=== CLEAN INSTALL FAILED, TRYING LEGACY PEER DEPS ===" && \
     npm install --legacy-peer-deps --no-audit --verbose --production 2>&1) || \
@@ -92,14 +95,18 @@ RUN echo "=== INSTALLING DEV DEPENDENCIES ===" && \
     npm install --legacy-peer-deps --no-audit --verbose --only=dev 2>&1) || \
     (echo "=== ALL INSTALL STRATEGIES FAILED FOR DEV DEPENDENCIES!" && exit 1)
 
+# ---------- Force TypeScript 5.8.0 Installation ----------
+RUN echo "=== Forcing TypeScript 5.8.0 installation ===" && \
+    npm install --no-audit --verbose typescript@5.8.0 2>&1 || \
+    (echo "=== Failed to install TypeScript 5.8.0!" && exit 1)
+
 # ---------- Debug: Verify critical dependencies ----------
 RUN echo "=== Verifying critical dependencies ===" && \
     ls -la node_modules/@angular-devkit/build-angular/ 2>/dev/null || \
     (echo "Installing @angular-devkit/build-angular explicitly" && \
     npm install --no-audit --verbose @angular-devkit/build-angular@20.0.4 2>&1) && \
     ls -la node_modules/typescript/ 2>/dev/null || \
-    (echo "Installing typescript explicitly" && \
-    npm install --no-audit --verbose typescript@5.8.0 2>&1) && \
+    (echo "TypeScript not found after forced installation!" && exit 1) && \
     ls -la node_modules/zone.js/ 2>/dev/null || \
     (echo "Installing zone.js explicitly" && \
     npm install --no-audit --verbose zone.js@0.15.1 2>&1) && \
