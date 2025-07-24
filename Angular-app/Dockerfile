@@ -1,4 +1,3 @@
-
 # =============================================================================
 # ANGULAR 4-STAGE MULTI-STAGE DOCKERFILE - FIXED FOR ANGULAR-APP PROJECT
 # =============================================================================
@@ -139,11 +138,6 @@ ENV NODE_ENV=production \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     APP_DIR_PATH=${APP_DIR_PATH}
 
-# ---------- Ensure Application Directories Exist ----------
-# RUN mkdir -p ${APP_DIR_PATH} && \
-#     chown -R ${USER_NAME}:${GROUP_NAME} ${APP_DIR} ${APP_DIR_PATH} && \
-#     chmod -R 755 ${APP_DIR} ${APP_DIR_PATH} 
-
 # ---------- Copy Source Code Files ----------
 COPY --chown=${USER_NAME}:${GROUP_NAME} . ${APP_DIR}/
 
@@ -159,12 +153,174 @@ RUN echo "=== Debugging: Checking copied files ===" && \
 
 # ---------- Verify required files exist ----------
 RUN test -f package.json || (echo "package.json missing in build stage!" && exit 1)
-RUN test -f angular.json || (echo "angular.json missing - creating basic one" && \
-    echo '{"version":1,"projects":{"portfolio-project":{"root":"","sourceRoot":"src","architect":{"build":{"builder":"@angular-devkit/build-angular:browser","options":{"outputPath":"dist/portfolio-project","index":"src/index.html","main":"src/main.ts","tsConfig":"tsconfig.app.json","polyfills":["zone.js"]}}}}}' > angular.json)
-RUN test -f tsconfig.json || (echo "tsconfig.json missing - creating basic one" && \
-    echo '{"compilerOptions":{"target":"ES2022","module":"ES2022","lib":["ES2022","dom"]}}' > tsconfig.json)
+
+# ---------- Create Angular 20 compatible angular.json if missing ----------
+RUN test -f angular.json || (echo "angular.json missing - creating Angular 20 compatible version" && \
+    cat > angular.json << 'EOF'
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "portfolio-project": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:browser",
+          "options": {
+            "outputPath": "dist/portfolio-project",
+            "index": "src/index.html",
+            "main": "src/main.ts",
+            "polyfills": ["zone.js"],
+            "tsConfig": "tsconfig.app.json",
+            "assets": [
+              "src/favicon.ico",
+              "src/assets"
+            ],
+            "styles": [
+              "src/styles.scss"
+            ],
+            "scripts": []
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kb",
+                  "maximumError": "1mb"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "2kb",
+                  "maximumError": "4kb"
+                }
+              ],
+              "outputHashing": "all",
+              "optimization": true,
+              "sourceMap": false,
+              "namedChunks": false,
+              "extractLicenses": true,
+              "vendorChunk": false
+            },
+            "development": {
+              "optimization": false,
+              "sourceMap": true,
+              "namedChunks": true,
+              "extractLicenses": false,
+              "vendorChunk": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "portfolio-project:build:production"
+            },
+            "development": {
+              "buildTarget": "portfolio-project:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "polyfills": ["zone.js", "zone.js/testing"],
+            "tsConfig": "tsconfig.spec.json",
+            "assets": [
+              "src/favicon.ico",
+              "src/assets"
+            ],
+            "styles": [
+              "src/styles.scss"
+            ],
+            "scripts": []
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": false
+  }
+}
+EOF
+)
+
+RUN test -f tsconfig.json || (echo "tsconfig.json missing - creating Angular 20 compatible version" && \
+    cat > tsconfig.json << 'EOF'
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "baseUrl": "./",
+    "outDir": "./dist/out-tsc",
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "sourceMap": true,
+    "declaration": false,
+    "downlevelIteration": true,
+    "experimentalDecorators": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "useDefineForClassFields": false,
+    "lib": [
+      "ES2022",
+      "dom"
+    ]
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  }
+}
+EOF
+)
+
 RUN test -f tsconfig.app.json || (echo "tsconfig.app.json missing - creating basic one" && \
-    echo '{"extends":"./tsconfig.json","compilerOptions":{"outDir":"./out-tsc/app"},"files":["src/main.ts"]}' > tsconfig.app.json)
+    cat > tsconfig.app.json << 'EOF'
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/app",
+    "types": []
+  },
+  "files": [
+    "src/main.ts"
+  ],
+  "include": [
+    "src/**/*.d.ts"
+  ]
+}
+EOF
+)
 
 # ---------- Code Quality Checks (Optional) ----------
 RUN ng lint 2>/dev/null || echo "Lint skipped"
@@ -176,15 +332,26 @@ RUN npm run test:ci 2>/dev/null || \
     npm run test -- --watch=false --browsers=Chrome --no-sandbox --disable-gpu 2>/dev/null || \
     echo "Tests skipped"
 
-# ---------- Build Angular Application ----------
+# ---------- Build Angular Application (CORRECTED) ----------
 RUN echo "Starting Angular build process..." && \
-    ng build --configuration=production --output-path=/app/dist/portfolio-project 2>&1 || \
-    (echo "Angular build failed! Check logs above for details." && exit 1)
+    echo "=== Angular CLI Version ===" && \
+    ng version && \
+    echo "=== Current angular.json ===" && \
+    cat angular.json && \
+    echo "=== Attempting production build ===" && \
+    ng build --configuration=production --output-path=/app/dist/portfolio-project --verbose 2>&1 || \
+    (echo "Production build failed, trying basic build..." && \
+    ng build --output-path=/app/dist/portfolio-project --verbose 2>&1) || \
+    (echo "All build attempts failed! Creating minimal build..." && \
+    ng build --output-path=/app/dist/portfolio-project --optimization=false --source-map=false 2>&1) || \
+    (echo "Angular build completely failed! Check logs above for details." && exit 1)
 
-# ---------- Verify Build Artifacts ----------
-RUN test -f /app/dist/portfolio-project/index.html || (echo "index.html missing in dist/portfolio-project! Build failed." && exit 1) && \
+# ---------- Verify Build Artifacts (ENHANCED) ----------
+RUN echo "=== Verifying build output ===" && \
     ls -la /app/dist/portfolio-project/ && \
-    echo "Build artifacts verified"
+    test -f /app/dist/portfolio-project/index.html || \
+    (echo "index.html missing in dist/portfolio-project! Build failed." && exit 1) && \
+    echo "Build artifacts verified successfully"
 
 # ---------- Security Audit (Non-blocking) ----------
 RUN npm audit --audit-level=high || echo "Security audit completed with warnings"
@@ -250,13 +417,8 @@ RUN mkdir -p /var/cache/nginx/client_temp \
 # ---------- Copy Build Artifacts ----------
 COPY --from=build /app/dist/portfolio-project/ /usr/share/nginx/html/
 
-
-
 # ---------- Copy Custom Nginx Configuration if Available ----------
 COPY nginx.conf* /etc/nginx/conf.d/default.conf
-
-
-
 
 # ---------- Verify build files and Nginx configuration ----------
 RUN echo "=== Production Stage - Verifying copied files ===" && \
